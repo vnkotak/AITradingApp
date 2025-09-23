@@ -26,16 +26,16 @@ def health():
     return {"status": "ok"}
 
 
-from .routes import router as api_router
+from routes import router as api_router
 app.include_router(api_router)
-from .ai_endpoints import router as ai_router
+from ai_endpoints import router as ai_router
 app.include_router(ai_router)
 
 @app.post("/scanner/run", response_model=RunResponse)
 def run_scanner(mode: str, _=Depends(verify_scanner_token)):
     if mode not in {"1m", "5m", "15m"}:
         raise HTTPException(status_code=400, detail="Invalid mode")
-    from .scanner import scan_once
+    from scanner import scan_once
     result = scan_once(mode)
     return {"status": "completed", "mode": mode}
 
