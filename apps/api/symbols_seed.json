@@ -1,0 +1,9 @@
+[
+  {"ticker":"RELIANCE","exchange":"NSE","name":"Reliance Industries","sector":"Energy","is_fno":true,"lot_size":250},
+  {"ticker":"TCS","exchange":"NSE","name":"Tata Consultancy Services","sector":"IT","is_fno":true,"lot_size":150},
+  {"ticker":"HDFCBANK","exchange":"NSE","name":"HDFC Bank","sector":"Financials","is_fno":true,"lot_size":550},
+  {"ticker":"INFY","exchange":"NSE","name":"Infosys","sector":"IT","is_fno":true,"lot_size":300},
+  {"ticker":"ITC","exchange":"NSE","name":"ITC","sector":"Consumer Staples","is_fno":true,"lot_size":3200}
+]
+
+

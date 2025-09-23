@@ -1,0 +1,19 @@
+name: Scan 15m
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call scanner 15m
+        env:
+          API_BASE: ${{ secrets.API_BASE }}
+          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+        run: |
+          curl -sS -X POST "$API_BASE/scanner/run?mode=15m" -H "Authorization: Bearer $SCANNER_TOKEN" || true
+
+

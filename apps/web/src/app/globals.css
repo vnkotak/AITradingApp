@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #__next {
+  height: 100%;
+}
+
+.binance-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr 360px;
+  grid-template-rows: 56px 1fr 280px;
+  gap: 8px;
+}
+
+.panel { @apply bg-surface rounded-md border border-gray-800; }
+
+

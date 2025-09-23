@@ -1,0 +1,22 @@
+name: Risk Trailing Stops (Market Hours)
+
+on:
+  schedule:
+    # IST=UTC+5:30. Market 09:15–15:30 IST → 03:45–10:00 UTC, Mon–Fri
+    - cron: '45 3 * * 1-5'
+    - cron: '*/5 4-9 * * 1-5'
+    - cron: '0 10 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  apply-trailing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply trailing stops (1m)
+        env:
+          API_BASE: ${{ secrets.API_BASE }}
+          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+        run: |
+          curl -sS -X POST "$API_BASE/risk/apply_trailing?tf=1m" -H "Authorization: Bearer $SCANNER_TOKEN" || true
+
+
