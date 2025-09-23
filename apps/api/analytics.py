@@ -5,7 +5,7 @@ from typing import Dict, List, Tuple
 import math
 import pandas as pd
 
-from .supabase_client import get_client
+from supabase_client import get_client
 
 
 def _daily_prices(symbol_id: str, days: int = 90) -> pd.DataFrame:

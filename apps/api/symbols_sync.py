@@ -1,5 +1,5 @@
 import json
-from .supabase_client import get_client
+from supabase_client import get_client
 
 
 def sync_symbols_from_seed(path: str = "apps/api/symbols_seed.json") -> int:

@@ -82,7 +82,7 @@ def get_candles(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE', tf: str = '
 
 @router.post("/symbols/sync")
 def symbols_sync():
-    from .symbols_sync import sync_symbols_from_seed
+    from symbols_sync import sync_symbols_from_seed
     count = sync_symbols_from_seed()
     return {"synced": count}
 

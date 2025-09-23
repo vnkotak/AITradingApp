@@ -3,7 +3,7 @@ from __future__ import annotations
 import feedparser
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from typing import List
-from .supabase_client import get_client
+from supabase_client import get_client
 
 
 RSS_SOURCES = [

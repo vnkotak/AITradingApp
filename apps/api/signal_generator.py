@@ -55,7 +55,7 @@ def _feature_contributions(df: pd.DataFrame) -> Dict[str, float]:
 
 def _sentiment_bias(ticker: str, exchange: str, lookback: int = 3) -> float:
     try:
-        from .supabase_client import get_client
+        from supabase_client import get_client
         sb = get_client()
         sym = sb.table('symbols').select('id').eq('ticker', ticker).eq('exchange', exchange).single().execute().data
         if not sym:

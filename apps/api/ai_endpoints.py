@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Dict
-from .supabase_client import get_client
+from supabase_client import get_client
 
 router = APIRouter()
 
