@@ -12,4 +12,4 @@ psycopg2-binary==2.9.9
 yfinance
 feedparser==6.0.11
 vaderSentiment==3.3.2
-websockets
+websockets>=12.0
