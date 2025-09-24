@@ -18,6 +18,9 @@ class Symbol(BaseModel):
     is_fno: bool | None = None
     lot_size: int | None = None
 
+@router.get("/test-cors")
+def test_cors():
+    return {"message": "CORS test"}
 
 @router.get("/symbols", response_model=List[Symbol])
 def list_symbols(active: bool = True):
