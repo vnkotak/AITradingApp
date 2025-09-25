@@ -47,7 +47,7 @@ export default function Trading() {
   useEffect(() => {
     if (!candles || !seriesRef.current) return
     const data = candles.map((c) => ({
-      time: Math.floor(new Date(c.ts).getTime()/1000),  // <-- number
+      time: Math.floor(new Date(c.ts).getTime() / 1000) as UTCTimestamp,
       open: c.open,
       high: c.high,
       low: c.low,
