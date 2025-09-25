@@ -6,7 +6,7 @@ from typing import Literal, Dict, Tuple
 
 import pandas as pd
 
-from supabase_client import get_client
+from apps.api.supabase_client import get_client
 
 
 @dataclass

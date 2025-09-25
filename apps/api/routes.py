@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Literal
-from supabase_client import get_client
-from yahoo_client import fetch_yahoo_candles
-from execution import simulate_order, apply_trade_updates
-from risk_engine import get_limits, suggest_position_size, should_block_order, apply_trailing_stops
-from analytics import pnl_summary
+from apps.api.supabase_client import get_client
+from apps.api.yahoo_client import fetch_yahoo_candles
+from apps.api.execution import simulate_order, apply_trade_updates
+from apps.api.risk_engine import get_limits, suggest_position_size, should_block_order, apply_trailing_stops
+from apps.api.analytics import pnl_summary
 
 router = APIRouter()
 
@@ -85,7 +85,7 @@ def get_candles(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE', tf: str = '
 
 @router.post("/symbols/sync")
 def symbols_sync():
-    from symbols_sync import sync_symbols_from_seed
+    from apps.api.symbols_sync import sync_symbols_from_seed
     count = sync_symbols_from_seed()
     return {"synced": count}
 
@@ -240,5 +240,25 @@ def risk_pause(req: PauseReq):
 @router.get("/pnl/summary")
 def pnl(range_days: int = 90):
     return pnl_summary(range_days)
+
+
+@router.get("/debug/scanner")
+def debug_scanner():
+    sb = get_client()
+    # Latest run
+    run = sb.table("strategy_runs").select("*").order("started_at", desc=True).limit(1).execute().data
+    if not run:
+        return {"message": "No runs found"}
+    run = run[0]
+    # Symbols scanned
+    symbols = sb.table("symbols").select("ticker,exchange").eq("is_active", True).limit(10).execute().data
+    # Recent signals
+    signals = sb.table("signals").select("*").order("ts", desc=True).limit(10).execute().data
+    return {
+        "latest_run": run,
+        "symbols_count": len(symbols),
+        "recent_signals_count": len(signals),
+        "sample_signals": signals[:3] if signals else []
+    }
 
 

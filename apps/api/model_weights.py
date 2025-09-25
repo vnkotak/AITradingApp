@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Dict
-from supabase_client import get_client
+from apps.api.supabase_client import get_client
 
 
 def get_latest_strategy_weights(defaults: Dict[str, float] | None = None) -> Dict[str, float]:

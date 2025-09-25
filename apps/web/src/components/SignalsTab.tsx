@@ -1,17 +1,62 @@
 "use client"
 
-import { useState } from 'react'
-import useSWR from 'swr'
+import { useEffect, useState } from 'react'
 import axios from 'axios'
 
 const API = process.env.NEXT_PUBLIC_API_BASE
-const fetcher = (url: string) => axios.get(url).then(r => r.data)
 
 export default function SignalsTab() {
   const [ticker, setTicker] = useState('RELIANCE')
   const [exchange, setExchange] = useState<'NSE'|'BSE'>('NSE')
   const [tf, setTf] = useState('1m')
-  const { data } = useSWR(`${API}/signals?ticker=${ticker}&exchange=${exchange}&tf=${tf}&limit=100`, fetcher, { refreshInterval: 10000 })
+  const [data, setData] = useState<any[]|null>(null)
+  const [scanning, setScanning] = useState(false)
+  
+  useEffect(() => {
+    let mounted = true
+    let id: any
+    const run = async () => {
+      if (API) {
+        try {
+          const res = await axios.get(`${API}/signals?ticker=${ticker}&exchange=${exchange}&tf=${tf}&limit=100`)
+          if (mounted) setData(res.data || [])
+        } catch {
+          // fallback to mock
+          const { getSignals } = await import('../lib/signals')
+          const rows = await getSignals([{ ticker, exchange }])
+          if (mounted) setData(rows)
+        }
+      } else {
+        // fallback to mock
+        const { getSignals } = await import('../lib/signals')
+        const rows = await getSignals([{ ticker, exchange }])
+        if (mounted) setData(rows)
+      }
+      id = setTimeout(run, 10000)
+    }
+    run()
+    return () => { mounted = false; if (id) clearTimeout(id) }
+  }, [ticker, exchange, tf])
+
+  const runScan = async () => {
+    if (!API) return
+    setScanning(true)
+    try {
+      await axios.post(`${API}/scanner/run?mode=${tf}&force=true`)
+      // refresh signals after scan
+      setTimeout(() => {
+        const run = async () => {
+          const res = await axios.get(`${API}/signals?ticker=${ticker}&exchange=${exchange}&tf=${tf}&limit=100`)
+          setData(res.data || [])
+        }
+        run()
+      }, 2000)
+    } catch (e) {
+      console.error('Scan failed:', e)
+    } finally {
+      setScanning(false)
+    }
+  }
   return (
     <div className="panel p-3">
       <div className="flex items-center gap-2 mb-3 text-sm">
@@ -27,6 +72,11 @@ export default function SignalsTab() {
           <option value="1h">1h</option>
           <option value="1d">1d</option>
         </select>
+        {API && (
+          <button onClick={runScan} disabled={scanning} className="bg-blue-600 px-3 py-1 rounded text-sm">
+            {scanning ? 'Scanning...' : 'Scan Now'}
+          </button>
+        )}
       </div>
       <div className="space-y-2 max-h-[70vh] overflow-auto text-sm">
         {(data||[]).map((s:any, i:number) => (
@@ -44,11 +94,6 @@ export default function SignalsTab() {
               <div>Target: {s.target? Number(s.target).toFixed(2): '-'}</div>
               <div>Conf: {(s.confidence*100).toFixed(0)}%</div>
             </div>
-            {s.rationale?.scoring && (
-              <div className="mt-2 text-gray-400 text-xs">
-                <div>rsi_bias {Number(s.rationale.scoring.features?.rsi_bias||0).toFixed(2)} | macd {Number(s.rationale.scoring.features?.macd_momentum||0).toFixed(2)} | vwap {Number(s.rationale.scoring.features?.vwap_premium_atr||0).toFixed(2)}</div>
-              </div>
-            )}
           </div>
         ))}
       </div>

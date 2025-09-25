@@ -28,12 +28,12 @@ def trend_follow(df: pd.DataFrame) -> Signal | None:
     if pd.notna(last.get("ema20")) and pd.notna(last.get("ema50")) and pd.notna(last.get("adx14")):
         crossed_up = prev["ema20"] <= prev["ema50"] and last["ema20"] > last["ema50"]
         crossed_dn = prev["ema20"] >= prev["ema50"] and last["ema20"] < last["ema50"]
-        if crossed_up and last["adx14"] > 20:
+        if crossed_up and last["adx14"] > 15:
             entry = float(last["close"])
             stop = float(last["close"] - 1.5 * last["atr14"])
             target = float(entry + 2 * (entry - stop))
             return Signal("BUY", entry, stop, target, 0.6, "trend_follow", {"ema_cross":"20>50","adx":float(last["adx14"])})
-        if crossed_dn and last["adx14"] > 20:
+        if crossed_dn and last["adx14"] > 15:
             entry = float(last["close"])
             stop = float(last["close"] + 1.5 * last["atr14"])
             target = float(entry - 2 * (stop - entry))
@@ -46,12 +46,12 @@ def mean_reversion(df: pd.DataFrame) -> Signal | None:
         return None
     last = df.iloc[-1]
     if pd.notna(last.get("rsi14")) and pd.notna(last.get("bb_lower")) and pd.notna(last.get("bb_upper")):
-        if last["rsi14"] < 25 and last["close"] < last["bb_lower"]:
+        if last["rsi14"] < 30 and last["close"] < last["bb_lower"]:
             entry = float(last["close"])
             stop = float(min(last["bb_lower"], last["close"] - 1.2 * last["atr14"]))
             target = float(last["bb_mid"]) if pd.notna(last.get("bb_mid")) else None
             return Signal("BUY", entry, stop, target, 0.5, "mean_reversion", {"rsi":float(last["rsi14"])})
-        if last["rsi14"] > 75 and last["close"] > last["bb_upper"]:
+        if last["rsi14"] > 70 and last["close"] > last["bb_upper"]:
             entry = float(last["close"])
             stop = float(max(last["bb_upper"], last["close"] + 1.2 * last["atr14"]))
             target = float(last["bb_mid"]) if pd.notna(last.get("bb_mid")) else None
@@ -67,12 +67,12 @@ def momentum(df: pd.DataFrame) -> Signal | None:
     vol_z = (df["volume"] - vol) / (df["volume"].rolling(20).std() + 1e-9)
     last_z = float(vol_z.iloc[-1]) if pd.notna(vol_z.iloc[-1]) else 0.0
     if pd.notna(last.get("vwap")) and pd.notna(last.get("ema20")):
-        if last["close"] > last["vwap"] and last["ema20"] > last["ema50"] and last_z > 1.5:
+        if last["close"] > last["vwap"] and last["ema20"] > last["ema50"] and last_z > 1.0:
             entry = float(last["close"])
             stop = float(last["close"] - 1.0 * last["atr14"]) if pd.notna(last.get("atr14")) else float(last["close"]*0.98)
             target = float(entry + 2 * (entry - stop))
             return Signal("BUY", entry, stop, target, 0.55, "momentum", {"vol_z":last_z})
-        if last["close"] < last["vwap"] and last["ema20"] < last["ema50"] and last_z > 1.5:
+        if last["close"] < last["vwap"] and last["ema20"] < last["ema50"] and last_z > 1.0:
             entry = float(last["close"])
             stop = float(last["close"] + 1.0 * last["atr14"]) if pd.notna(last.get("atr14")) else float(last["close"]*1.02)
             target = float(entry - 2 * (stop - entry))

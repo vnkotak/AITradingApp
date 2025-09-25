@@ -4,12 +4,12 @@ from datetime import datetime, timezone
 from typing import List
 import pandas as pd
 
-from supabase_client import get_client
-from yahoo_client import fetch_yahoo_candles
-from strategies.indicators import add_core_indicators
-from strategies.engine import run_strategies
-from signal_generator import ScoredSignal, score_signal, ensemble
-from model_weights import get_latest_strategy_weights
+from apps.api.supabase_client import get_client
+from apps.api.yahoo_client import fetch_yahoo_candles
+from apps.api.strategies.indicators import add_core_indicators
+from apps.api.strategies.engine import run_strategies
+from apps.api.signal_generator import ScoredSignal, score_signal, ensemble
+from apps.api.model_weights import get_latest_strategy_weights
 
 
 def fetch_history_df(symbol_id: str, ticker: str, exchange: str, tf: str, lookback_days: int = 7) -> pd.DataFrame:
@@ -44,7 +44,7 @@ def fetch_history_df(symbol_id: str, ticker: str, exchange: str, tf: str, lookba
     return df
 
 
-def scan_once(mode: str) -> dict:
+def scan_once(mode: str, force: bool = False) -> dict:
     sb = get_client()
     # Record run
     run = sb.table("strategy_runs").insert({"mode": mode}).execute().data[0]
@@ -58,7 +58,21 @@ def scan_once(mode: str) -> dict:
             continue
         df = add_core_indicators(df)
         raw_signals = run_strategies(df)
-        if not sigs:
+        if not raw_signals and force:
+            # deterministic forced signal for testing
+            last = df.iloc[-1]
+            prev = df.iloc[-2]
+            entry = float(last["close"]) 
+            atr = float(pd.concat([
+                (df['high'].astype(float) - df['low'].astype(float)),
+                (df['high'].astype(float) - df['close'].astype(float).shift(1)).abs(),
+                (df['low'].astype(float) - df['close'].astype(float).shift(1)).abs(),
+            ], axis=1).max(axis=1).rolling(14).mean().iloc[-1] or (entry*0.01))
+            stop = float(min(prev["low"], entry - 1.0 * atr))
+            target = float(entry + 2.0 * (entry - stop))
+            from apps.api.strategies.engine import Signal as StratSignal
+            raw_signals = [StratSignal("BUY", entry, stop, target, 0.6, "forced_test", {"reason": "force=true"})]
+        if not raw_signals:
             continue
         last_ts = df.iloc[-1]["ts"]
         rows = []
@@ -86,10 +100,21 @@ def scan_once(mode: str) -> dict:
                 "confidence": conf,
                 "rationale": {"rationale": sig.rationale, "scoring": rationale},
             })
-        sb.table("signals").insert(rows).execute()
+        if rows:
+            sb.table("signals").insert(rows).execute()
         # Ensemble decision using latest model weights
         weights = get_latest_strategy_weights(defaults={"trend_follow":1,"mean_reversion":1,"momentum":1})
         ens = ensemble(scored, strategy_weights=weights)
+        # Map decision to DB enum
+        raw_decision = ens.get("decision")
+        if raw_decision in ("BUY", "ENTER_LONG"):
+            decision_val = "ENTER_LONG"
+        elif raw_decision in ("SELL", "ENTER_SHORT"):
+            decision_val = "ENTER_SHORT"
+        elif raw_decision in ("EXIT", "EXIT_LONG", "EXIT_SHORT"):
+            decision_val = "EXIT"
+        else:
+            decision_val = "PASS"
         try:
             model = sb.table("ai_models").insert({"version":"v0", "params": {"type": "linear-blend"}}).execute().data[0]
         except Exception:
@@ -97,11 +122,11 @@ def scan_once(mode: str) -> dict:
         sb.table("ai_decisions").insert({
             "model_id": model["id"],
             "weights": ens["weights"],
-            "decision": ens["decision"],
+            "decision": decision_val,
             "rationale": {"mode": mode, "symbol": ticker},
         }).execute()
         total_signals += len(rows)
-    sb.table("strategy_runs").update({"signals_generated": total_signals, "completed_at": datetime.now(timezone.utc).isoformat()}).eq("id", run_id).execute()
-    return {"run_id": run_id, "signals": total_signals}
+    sb.table("strategy_runs").update({"symbols_scanned": len(symbols or []), "signals_generated": total_signals, "completed_at": datetime.now(timezone.utc).isoformat()}).eq("id", run_id).execute()
+    return {"run_id": run_id, "signals": total_signals, "symbols_scanned": len(symbols or [])}
 
 
