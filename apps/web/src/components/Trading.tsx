@@ -5,6 +5,7 @@ import { createChart, ISeriesApi } from 'lightweight-charts'
 import Signals from './Signals'
 import { getMarketAdapter, type Candle, type Timeframe } from '../lib/marketAdapter'
 import { useTradingStore } from '../store/trading'
+import { UTCTimestamp } from 'lightweight-charts'
 
 export default function Trading() {
   const [symbol, setSymbol] = useState({ ticker: 'RELIANCE', exchange: 'NSE' as 'NSE'|'BSE' })
@@ -45,7 +46,13 @@ export default function Trading() {
 
   useEffect(() => {
     if (!candles || !seriesRef.current) return
-    const data = candles.map((c) => ({ time: Math.floor(new Date(c.ts).getTime()/1000), open: c.open, high: c.high, low: c.low, close: c.close }))
+    const data = candles.map((c) => ({
+      time: Math.floor(new Date(c.ts).getTime()/1000),  // <-- number
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close
+    }))
     seriesRef.current.setData(data)
   }, [candles])
 
