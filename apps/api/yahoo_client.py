@@ -22,11 +22,18 @@ def map_symbol_to_yf(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE') -> str
 
 def fetch_yahoo_candles(ticker: str, exchange: Literal['NSE','BSE'], timeframe: str = '1m', lookback_days: int = 5) -> List[Dict]:
     yf_symbol = map_symbol_to_yf(ticker, exchange)
-    interval = TF_TO_YF.get(timeframe, '1m')
+    interval = TF_TO_YF.get(timeframe, '1d')
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=lookback_days)
+    print ("start", start)
+    print ("end", end)
+    print ("interval", interval)
+    print ("yf_symbol", yf_symbol)
     try:
-        df = yf.download(yf_symbol, interval=interval, start=start, end=end, auto_adjust=False, progress=False)
+        df = yf.download("RELIANCE.NS", period="6mo", interval="1d", progress=False)
+        print(df)
+        print("Test 2")
+        #df = yf.download(yf_symbol, interval=interval, start=start, end=end, auto_adjust=False, progress=False)
     except Exception:
         df = None
     if df is None or df.empty:

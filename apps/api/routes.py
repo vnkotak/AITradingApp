@@ -64,36 +64,8 @@ def ingest_candles(payload: CandleIngest):
         sb.table("candles").upsert(rows, on_conflict="symbol_id,timeframe,ts").execute()
     return {"ingested": len(rows)}
 
-
-@router.get("/candles/{ticker}")
-def get_candles(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE', tf: str = '1m', limit: int = 500):
-    sb = get_client()
-    sym = sb.table("symbols").select("id").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
-    if not sym:
-        raise HTTPException(status_code=404, detail="Symbol not found")
-    data = (
-        sb.table("candles")
-        .select("ts,open,high,low,close,volume,vwap")
-        .eq("symbol_id", sym["id"])
-        .eq("timeframe", tf)
-        .order("ts", desc=True)
-        .limit(limit)
-        .execute().data
-    )
-    return list(reversed(data or []))
-
-
-@router.post("/symbols/sync")
-def symbols_sync():
-    print("Symbols sync")
-    from apps.api.symbols_sync import sync_symbols_from_seed
-    count = sync_symbols_from_seed()
-    return {"synced": count}
-
-
 @router.post("/candles/fetch")
 def fetch_and_store_candles(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE', tf: str = '1m', lookback_days: int = 5):
-    print("Symbfetch_and_store_candles sync")
     sb = get_client()
     print(f"DEBUG: Fetching candles for ticker={ticker}, exchange={exchange}, tf={tf}, lookback_days={lookback_days}")
     sym = sb.table("symbols").select("id").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
@@ -119,6 +91,31 @@ def fetch_and_store_candles(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE',
     sb.table("candles").upsert(rows, on_conflict="symbol_id,timeframe,ts").execute()
     print(f"DEBUG: Upserted {len(rows)} rows into candles table.")
     return {"ingested": len(rows)}
+
+@router.get("/candles/ticker/{ticker}")
+def get_candles(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE', tf: str = '1m', limit: int = 500):
+    sb = get_client()
+    sym = sb.table("symbols").select("id").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
+    if not sym:
+        raise HTTPException(status_code=404, detail="Symbol not found")
+    data = (
+        sb.table("candles")
+        .select("ts,open,high,low,close,volume,vwap")
+        .eq("symbol_id", sym["id"])
+        .eq("timeframe", tf)
+        .order("ts", desc=True)
+        .limit(limit)
+        .execute().data
+    )
+    return list(reversed(data or []))
+
+
+@router.post("/symbols/sync")
+def symbols_sync():
+    print("Symbols sync")
+    from apps.api.symbols_sync import sync_symbols_from_seed
+    count = sync_symbols_from_seed()
+    return {"synced": count}
 
 
 @router.get("/signals")
