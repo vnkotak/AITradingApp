@@ -92,12 +92,17 @@ def symbols_sync():
 
 @router.post("/candles/fetch")
 def fetch_and_store_candles(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE', tf: str = '1m', lookback_days: int = 5):
+    print("Hello")
     sb = get_client()
+    print(f"DEBUG: Fetching candles for ticker={ticker}, exchange={exchange}, tf={tf}, lookback_days={lookback_days}")
     sym = sb.table("symbols").select("id").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
+    print(f"DEBUG: Symbol lookup result: {sym}")
     if not sym:
+        print("ERROR: Symbol not found in DB!")
         raise HTTPException(status_code=404, detail="Symbol not found")
     candles = fetch_yahoo_candles(ticker, exchange, timeframe=tf, lookback_days=lookback_days)
     if not candles:
+        print("WARNING: No candles fetched from Yahoo!")
         return {"ingested": 0}
     rows = [{
         "symbol_id": sym["id"],
@@ -109,7 +114,9 @@ def fetch_and_store_candles(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE',
         "close": c["close"],
         "volume": c.get("volume"),
     } for c in candles]
+    print(f"DEBUG: Prepared {len(rows)} rows for upsert.")
     sb.table("candles").upsert(rows, on_conflict="symbol_id,timeframe,ts").execute()
+    print(f"DEBUG: Upserted {len(rows)} rows into candles table.")
     return {"ingested": len(rows)}
 
 
