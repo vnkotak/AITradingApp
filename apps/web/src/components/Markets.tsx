@@ -76,7 +76,7 @@ function SymbolCard({ sym }: { sym: SymbolInfo }) {
       try {
         // Try API first
         if (process.env.NEXT_PUBLIC_API_BASE) {
-          const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/candles/${sym.ticker}?exchange=${sym.exchange}&tf=1d&limit=5`)
+          const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/candles/ticker/${sym.ticker}?exchange=${sym.exchange}&tf=1d&limit=5`)
           if (res.ok) {
             const cs = await res.json()
             const last = cs[cs.length-1]?.close || 0

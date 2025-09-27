@@ -58,7 +58,7 @@ class ApiAdapter implements MarketAdapter {
 		return { direction, advanceDecline: { advancers: up, decliners: down }, avgChangePct: avg }
 	}
 	async getCandles(ticker: string, exchange: 'NSE'|'BSE', tf: Timeframe, lookback: number = 5): Promise<Candle[]> {
-		const url = `${API}/candles/${ticker}?exchange=${exchange}&tf=${tf}&limit=${tf==='1d'? 120 : 500}`
+		const url = `${API}/candles/ticker/${ticker}?exchange=${exchange}&tf=${tf}&limit=${tf==='1d'? 120 : 500}`
 		const res = await axios.get(url)
 		return res.data || []
 	}
