@@ -91,7 +91,7 @@ def symbols_sync():
     return {"synced": count}
 
 
-@router.post("/candles/fetch1")
+@router.post("/candles/fetch")
 def fetch_and_store_candles(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE', tf: str = '1m', lookback_days: int = 5):
     print("Symbfetch_and_store_candles sync")
     sb = get_client()
