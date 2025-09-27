@@ -85,14 +85,15 @@ def get_candles(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE', tf: str = '
 
 @router.post("/symbols/sync")
 def symbols_sync():
+    print("Symbols sync")
     from apps.api.symbols_sync import sync_symbols_from_seed
     count = sync_symbols_from_seed()
     return {"synced": count}
 
 
-@router.post("/candles/fetch")
+@router.post("/candles/fetch1")
 def fetch_and_store_candles(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE', tf: str = '1m', lookback_days: int = 5):
-    print("Hello")
+    print("Symbfetch_and_store_candles sync")
     sb = get_client()
     print(f"DEBUG: Fetching candles for ticker={ticker}, exchange={exchange}, tf={tf}, lookback_days={lookback_days}")
     sym = sb.table("symbols").select("id").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
