@@ -11,6 +11,6 @@ jobs:
     steps:
       - name: Call scanner 15m
         run: |
-          curl -sS -X POST "https://aitradingapp.onrender.com/scanner/run?mode=15m" -H "Authorization: Bearer $SCANNER_TOKEN" || true
+          curl -sS -X POST "https://aitradingapp.onrender.com/scanner/run?mode=15m"
 
 
