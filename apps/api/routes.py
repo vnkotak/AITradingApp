@@ -561,42 +561,7 @@ def fetch_comprehensive_market_heatmap():
 def get_home_overview():
     """Get comprehensive home page overview data"""
     sb = get_client()
-    data_source = "mock"  # Track if we're using real or mock data
-
-    if not sb:
-        print("❌ Database connection failed - using mock data")
-        data_source = "mock"
-        return {
-            "market_status": "OPEN",
-            "market_time": datetime.now().strftime("%H:%M"),
-            "sentiment_score": 15.5,
-            "portfolio_value": 1250000,
-            "portfolio_pnl": 25000,
-            "cash_balance": 800000,
-            "active_positions": 3,
-            "total_signals_today": 12,
-            "data_source": "mock",
-            "debug_info": "Database connection not available",
-            "top_gainers": [
-                {"ticker": "RELIANCE", "name": "Reliance Industries", "price": 2456.75, "change": 45.20, "changePercent": 1.87},
-                {"ticker": "TCS", "name": "Tata Consultancy", "price": 3421.30, "change": 38.15, "changePercent": 1.13},
-                {"ticker": "INFY", "name": "Infosys", "price": 1687.45, "change": 25.80, "changePercent": 1.55},
-                {"ticker": "HDFCBANK", "name": "HDFC Bank", "price": 1654.90, "change": 18.75, "changePercent": 1.15},
-                {"ticker": "ICICI", "name": "ICICI Bank", "price": 987.65, "change": 15.40, "changePercent": 1.58}
-            ],
-            "top_losers": [
-                {"ticker": "YESBANK", "name": "Yes Bank", "price": 18.45, "change": -0.85, "changePercent": -4.40},
-                {"ticker": "IDEA", "name": "Vodafone Idea", "price": 8.90, "change": -0.35, "changePercent": -3.78},
-                {"ticker": "SUZLON", "name": "Suzlon Energy", "price": 45.20, "change": -1.65, "changePercent": -3.52},
-                {"ticker": "GMRAIRPORT", "name": "GMR Infra", "price": 38.75, "change": -1.20, "changePercent": -3.00}
-            ],
-            "indices": [
-                {"name": "NIFTY 50", "value": 22150.75, "change": 125.30, "changePercent": 0.57},
-                {"name": "SENSEX", "value": 72850.20, "change": 380.45, "changePercent": 0.52},
-                {"name": "NIFTY BANK", "value": 47500.85, "change": 220.75, "changePercent": 0.47},
-                {"name": "NIFTY IT", "value": 38500.40, "change": -85.25, "changePercent": -0.22}
-            ]
-        }
+    data_source = "real"  # Track if we're using real or mock data
 
     # Initialize variables before try block
     real_indices = []
@@ -605,50 +570,23 @@ def get_home_overview():
     market_status = "CLOSED"
     market_time = datetime.now().strftime("%H:%M")
     sentiment_score = 0
+    portfolio_value = 1000000  # Default fallback
+    portfolio_pnl = 0
+    cash_balance = 1000000
+    active_positions = 0
+    total_signals_today = 0
     data_source = "mock"
 
+    # Always try to fetch real market indices data, regardless of database connection
     try:
-        # Get market indices data (using top symbols as proxy)
-        print("🔍 Fetching symbols from database...")
-        symbols = sb.table("symbols").select("ticker,exchange").eq("is_active", True).limit(10).execute().data or []
-        print(f"📊 Found {len(symbols)} symbols in database")
-
-        # Get recent signals for market sentiment
-        print("🔍 Fetching recent signals...")
-        recent_signals = sb.table("signals").select("action,confidence,ts").order("ts", desc=True).limit(50).execute().data or []
-        print(f"📊 Found {len(recent_signals)} signals in database")
-
-        # Calculate market sentiment based on MULTIPLE factors
-        bullish_signals = sum(1 for s in recent_signals if s["action"] == "BUY")
-        bearish_signals = sum(1 for s in recent_signals if s["action"] == "SELL")
-        total_signals = len(recent_signals)
-
-        # Calculate AI sentiment from signals
-        ai_sentiment_score = 0
-        if total_signals > 0:
-            ai_sentiment_score = ((bullish_signals - bearish_signals) / total_signals) * 100
-
-        # Get portfolio metrics
-        print("🔍 Fetching positions...")
-        positions = sb.table("positions").select("qty,avg_price,unrealized_pnl").execute().data or []
-        print(f"📊 Found {len(positions)} positions in database")
-
-        cash = 1000000  # Default cash balance since cash_available column doesn't exist in schema
-        portfolio_value = cash
-        unrealized_pnl = 0
-        for pos in positions:
-            portfolio_value += abs(float(pos.get("qty", 0))) * float(pos.get("avg_price", 0))
-            unrealized_pnl += float(pos.get("unrealized_pnl", 0))
-
-        data_source = "real"
-
-        # Get real market indices data
-        print("📊 Fetching real market indices...")
+        print("📊 Fetching real market indices from Yahoo Finance...")
         real_indices = fetch_real_market_indices()
+        print(f"✅ Successfully fetched {len(real_indices)} indices")
 
         # Get real top movers data
-        print("📊 Fetching real top movers...")
+        print("📊 Fetching real top movers from Yahoo Finance...")
         movers_data = fetch_comprehensive_market_heatmap()
+
         # For top gainers/losers, filter and sort the comprehensive data
         gainers = [s for s in movers_data if s["performance"] > 0]
         losers = [s for s in movers_data if s["performance"] < 0]
@@ -658,46 +596,128 @@ def get_home_overview():
 
         top_gainers = gainers[:5]
         top_losers = losers[:5]
+        print(f"✅ Successfully fetched {len(top_gainers)} gainers and {len(top_losers)} losers")
 
         # Get real market status
         market_status, market_time = get_indian_market_status()
         print(f"🏛️ Market status: {market_status} at {market_time}")
 
-        # Calculate market sentiment from actual market data
-        market_sentiment_score = 0
-        if real_indices:
-            # Average the performance of major indices
-            total_performance = sum(index.get("changePercent", 0) for index in real_indices)
-            market_sentiment_score = total_performance / len(real_indices) if real_indices else 0
+        # Set data source to real since we got real data
+        data_source = "real"
 
-        # Combine AI sentiment with market reality (weighted average)
-        # 60% market data + 40% AI signals for balanced view
-        combined_sentiment = (market_sentiment_score * 0.6) + (ai_sentiment_score * 0.4)
-        sentiment_score = combined_sentiment
-
-        return {
-            "market_status": market_status,
-            "market_time": market_time,
-            "sentiment_score": sentiment_score,
-            "portfolio_value": portfolio_value,
-            "portfolio_pnl": unrealized_pnl,
-            "cash_balance": cash,
-            "active_positions": len(positions),
-            "total_signals_today": total_signals,
-            "data_source": data_source,
-            "debug_info": f"Market: {market_status}, Indices: {len(real_indices)}, Gainers: {len(top_gainers)}, Losers: {len(top_losers)}, AI Signals: {total_signals}",
-            "sentiment_components": {
-                "ai_sentiment": round(ai_sentiment_score, 1),
-                "market_sentiment": round(market_sentiment_score, 1),
-                "combined_sentiment": round(sentiment_score, 1),
-                "total_signals": total_signals
-            },
-            "top_gainers": top_gainers,
-            "top_losers": top_losers,
-            "indices": real_indices
-        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching home overview: {str(e)}")
+        print(f"❌ Error fetching real market data: {e}")
+        # Fall back to mock indices data if Yahoo Finance fails
+        print("⚠️ Using mock indices data as fallback")
+        real_indices = [
+            {"name": "NIFTY 50", "value": 22150.75, "change": 125.30, "changePercent": 0.57, "source": "mock"},
+            {"name": "SENSEX", "value": 72850.20, "change": 380.45, "changePercent": 0.52, "source": "mock"},
+            {"name": "NIFTY BANK", "value": 47500.85, "change": 220.75, "changePercent": 0.47, "source": "mock"},
+            {"name": "NIFTY IT", "value": 38500.40, "change": -85.25, "changePercent": -0.22, "source": "mock"}
+        ]
+        top_gainers = [
+            {"ticker": "RELIANCE", "name": "Reliance Industries", "price": 2456.75, "change": 45.20, "changePercent": 1.87},
+            {"ticker": "TCS", "name": "Tata Consultancy", "price": 3421.30, "change": 38.15, "changePercent": 1.13},
+            {"ticker": "INFY", "name": "Infosys", "price": 1687.45, "change": 25.80, "changePercent": 1.55},
+            {"ticker": "HDFCBANK", "name": "HDFC Bank", "price": 1654.90, "change": 18.75, "changePercent": 1.15},
+            {"ticker": "ICICI", "name": "ICICI Bank", "price": 987.65, "change": 15.40, "changePercent": 1.58}
+        ]
+        top_losers = [
+            {"ticker": "YESBANK", "name": "Yes Bank", "price": 18.45, "change": -0.85, "changePercent": -4.40},
+            {"ticker": "IDEA", "name": "Vodafone Idea", "price": 8.90, "change": -0.35, "changePercent": -3.78},
+            {"ticker": "SUZLON", "name": "Suzlon Energy", "price": 45.20, "change": -1.65, "changePercent": -3.52},
+            {"ticker": "GMRAIRPORT", "name": "GMR Infra", "price": 38.75, "change": -1.20, "changePercent": -3.00}
+        ]
+
+    # Only try database operations if we have a database connection
+    if sb:
+        try:
+            # Get market indices data (using top symbols as proxy)
+            print("🔍 Fetching symbols from database...")
+            symbols = sb.table("symbols").select("ticker,exchange").eq("is_active", True).limit(10).execute().data or []
+            print(f"📊 Found {len(symbols)} symbols in database")
+
+            # Get recent signals for market sentiment
+            print("🔍 Fetching recent signals...")
+            recent_signals = sb.table("signals").select("action,confidence,ts").order("ts", desc=True).limit(50).execute().data or []
+            print(f"📊 Found {len(recent_signals)} signals in database")
+
+            # Calculate market sentiment based on MULTIPLE factors
+            bullish_signals = sum(1 for s in recent_signals if s["action"] == "BUY")
+            bearish_signals = sum(1 for s in recent_signals if s["action"] == "SELL")
+            total_signals = len(recent_signals)
+
+            # Calculate AI sentiment from signals
+            ai_sentiment_score = 0
+            if total_signals > 0:
+                ai_sentiment_score = ((bullish_signals - bearish_signals) / total_signals) * 100
+
+            # Get portfolio metrics
+            print("🔍 Fetching positions...")
+            positions = sb.table("positions").select("qty,avg_price,unrealized_pnl").execute().data or []
+            print(f"📊 Found {len(positions)} positions in database")
+
+            cash = 1000000  # Default cash balance since cash_available column doesn't exist in schema
+            portfolio_value = cash
+            unrealized_pnl = 0
+            for pos in positions:
+                portfolio_value += abs(float(pos.get("qty", 0))) * float(pos.get("avg_price", 0))
+                unrealized_pnl += float(pos.get("unrealized_pnl", 0))
+
+            # Calculate market sentiment from actual market data
+            market_sentiment_score = 0
+            if real_indices:
+                # Average the performance of major indices
+                total_performance = sum(index.get("changePercent", 0) for index in real_indices)
+                market_sentiment_score = total_performance / len(real_indices) if real_indices else 0
+
+            # Combine AI sentiment with market reality (weighted average)
+            # 60% market data + 40% AI signals for balanced view
+            combined_sentiment = (market_sentiment_score * 0.6) + (ai_sentiment_score * 0.4)
+            sentiment_score = combined_sentiment
+
+            return {
+                "market_status": market_status,
+                "market_time": market_time,
+                "sentiment_score": sentiment_score,
+                "portfolio_value": portfolio_value,
+                "portfolio_pnl": unrealized_pnl,
+                "cash_balance": cash,
+                "active_positions": len(positions),
+                "total_signals_today": total_signals,
+                "data_source": data_source,
+                "debug_info": f"Market: {market_status}, Indices: {len(real_indices)}, Gainers: {len(top_gainers)}, Losers: {len(top_losers)}, AI Signals: {total_signals}",
+                "sentiment_components": {
+                    "ai_sentiment": round(ai_sentiment_score, 1),
+                    "market_sentiment": round(market_sentiment_score, 1),
+                    "combined_sentiment": round(sentiment_score, 1),
+                    "total_signals": total_signals
+                },
+                "top_gainers": top_gainers,
+                "top_losers": top_losers,
+                "indices": real_indices
+            }
+        except Exception as e:
+            print(f"❌ Database error: {e}")
+            # Even if database fails, return the real market data we fetched
+            data_source = "hybrid"
+
+    # Return the data we fetched (either real or fallback mock data)
+    return {
+        "market_status": market_status,
+        "market_time": market_time,
+        "sentiment_score": sentiment_score,
+        "portfolio_value": portfolio_value,
+        "portfolio_pnl": portfolio_pnl,
+        "cash_balance": cash_balance,
+        "active_positions": active_positions,
+        "total_signals_today": total_signals_today,
+        "data_source": data_source,
+        "debug_info": f"Market: {market_status}, Indices: {len(real_indices)}, Gainers: {len(top_gainers)}, Losers: {len(top_losers)}",
+        "top_gainers": top_gainers,
+        "top_losers": top_losers,
+        "indices": real_indices
+    }
 
 
 @router.get("/home/recent-signals")
