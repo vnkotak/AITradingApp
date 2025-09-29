@@ -2,7 +2,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal, List, Dict
 import math
 import random
-import yfinance as yf
+import requests
+import pandas as pd
 
 
 TF_TO_YF = {
@@ -16,49 +17,113 @@ TF_TO_YF = {
 
 def map_symbol_to_yf(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE') -> str:
     # Yahoo uses .NS for NSE and .BO for BSE
+    if ticker.startswith('%'):
+        return ticker
+
     suffix = '.NS' if exchange == 'NSE' else '.BO'
     return f"{ticker}{suffix}"
 
 
-def fetch_yahoo_candles(ticker: str, exchange: Literal['NSE','BSE'], timeframe: str = '1m', lookback_days: int = 5) -> List[Dict]:
+def get_val(row, *keys):
+    for k in keys:
+        if k in row and not pd.isnull(row[k]):
+            v = row[k]
+            # If it's a Series, get the first value
+            if isinstance(v, pd.Series):
+                v = v.iloc[0]
+            return v
+    return 0.0
+
+
+def fetch_yahoo_candles(
+    ticker: str,
+    exchange: Literal['NSE','BSE'],
+    timeframe: str = '1m',
+    lookback_days: int = 5
+) -> List[Dict]:
     yf_symbol = map_symbol_to_yf(ticker, exchange)
     interval = TF_TO_YF.get(timeframe, '1d')
-    end = datetime.now(timezone.utc)
-    start = end - timedelta(days=lookback_days)
-    print ("start", start)
-    print ("end", end)
-    print ("interval", interval)
-    print ("yf_symbol", yf_symbol)
+
+    print(f"📊 Fetching {timeframe} data for {yf_symbol}, lookback: {lookback_days} days")
+
+    url = f"https://query2.finance.yahoo.com/v8/finance/chart/{yf_symbol}"
+
+    # Fix: Use period1 and period2 with appropriate limits based on timeframe
+    now = int(datetime.now(timezone.utc).timestamp())
+
+    # Yahoo Finance limitations:
+    # - 1m, 5m, 15m: max 60 days historical data
+    # - 1h: max 730 days
+    # - 1d: no limit
+    max_days = {
+        '1m': 60,
+        '5m': 60,
+        '15m': 60,
+        '1h': 730,
+        '1d': 365*2  # 2 years
+    }
+
+    actual_lookback = min(lookback_days, max_days.get(timeframe, 60))
+    start_time = now - (actual_lookback * 24 * 60 * 60)
+
+    print(f"⏰ Date range: {start_time} to {now} (using {actual_lookback} days for {timeframe})")
+
+    params = {
+        "period1": start_time,
+        "period2": now,
+        "interval": interval,
+        "includePrePost": "false",
+        "events": "div,splits",
+    }
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+
     try:
-        df = yf.download("RELIANCE.NS", period="6mo", interval="1d", progress=False)
-        print(df)
-        print("Test 2")
-        #df = yf.download(yf_symbol, interval=interval, start=start, end=end, auto_adjust=False, progress=False)
-    except Exception:
+        r = requests.get(url, headers=headers, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        result = data["chart"]["result"][0]
+
+        timestamps = result["timestamp"]
+        indicators = result["indicators"]["quote"][0]
+
+        df = pd.DataFrame({
+            "time": pd.to_datetime(timestamps, unit="s", utc=True),
+            "open": indicators.get("open", []),
+            "high": indicators.get("high", []),
+            "low": indicators.get("low", []),
+            "close": indicators.get("close", []),
+            "volume": indicators.get("volume", []),
+        })
+
+    except Exception as e:
+        print(f"Exception during Yahoo API request: {e}")
         df = None
+
     if df is None or df.empty:
-        # Robust fallback: synth candles so scanning can proceed without live data
+        print("No data from Yahoo API, returning synthetic candles.")
         return _generate_synthetic_candles(timeframe, lookback_days, seed_symbol=f"{ticker}.{exchange}")
-    df = df.reset_index()
-    # Standardize column names between different intervals (Datetime vs DatetimeIndex named)
-    time_col = 'Datetime' if 'Datetime' in df.columns else ('Date' if 'Date' in df.columns else df.columns[0])
+
     candles: List[Dict] = []
     for _, row in df.iterrows():
-        ts = row[time_col]
+        ts = row["time"]
         if not isinstance(ts, datetime):
-            try:
-                ts = datetime.fromisoformat(str(ts)).replace(tzinfo=timezone.utc)
-            except Exception:
-                # skip unparsable
-                continue
+            continue
         candles.append({
-            'ts': ts.isoformat(),
-            'open': float(row.get('Open') or row.get('open') or 0),
-            'high': float(row.get('High') or row.get('high') or 0),
-            'low': float(row.get('Low') or row.get('low') or 0),
-            'close': float(row.get('Close') or row.get('close') or 0),
-            'volume': float((row.get('Volume') or row.get('volume') or 0) or 0),
+            "ts": ts.isoformat(),
+            "open": float(get_val(row, "open")),
+            "high": float(get_val(row, "high")),
+            "low": float(get_val(row, "low")),
+            "close": float(get_val(row, "close")),
+            "volume": float(get_val(row, "volume")),
         })
+
+    print(f"Returning {len(candles)} candles for {yf_symbol}.")
     return candles
 
 
@@ -74,10 +139,8 @@ def _generate_synthetic_candles(timeframe: str, lookback_days: int, seed_symbol:
     step = tf_to_secs.get(timeframe, 60)
     total_secs = max(1, lookback_days) * 86400
     points = min(1200, max(50, total_secs // step))
-    # deterministic seed per symbol for stable series
     rnd = random.Random(abs(hash(seed_symbol)) % (2**32))
     now = int(datetime.now(timezone.utc).timestamp())
-    # start price between 500 and 3000
     price = 500.0 + rnd.random() * 2500.0
     vol_scale = 0.001 if timeframe != '1d' else 0.01
     candles: List[Dict] = []
@@ -99,5 +162,3 @@ def _generate_synthetic_candles(timeframe: str, lookback_days: int, seed_symbol:
         })
         price = close_px
     return candles
-
-

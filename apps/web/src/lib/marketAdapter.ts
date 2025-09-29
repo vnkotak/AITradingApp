@@ -35,9 +35,17 @@ const API = process.env.NEXT_PUBLIC_API_BASE
 
 class ApiAdapter implements MarketAdapter {
 	async getSymbols(): Promise<SymbolInfo[]> {
-		const url = `${API}/symbols?active=true`
-		const res = await axios.get(url)
-		return res.data || []
+		try {
+			const url = `${API}/symbols?active=true`
+			const res = await axios.get(url)
+			return res.data || []
+		} catch (error: any) {
+			console.error('Failed to fetch symbols from API:', error)
+			if (error.response?.status === 503) {
+				throw new Error('Database not configured. Please set up SUPABASE_URL and SUPABASE_SERVICE_KEY.')
+			}
+			throw new Error(`API Error: ${error.response?.data?.detail || error.message}`)
+		}
 	}
 	async getOverview(): Promise<MarketOverview> {
 		// Approximate using latest close vs previous for first ~30 symbols
@@ -58,9 +66,53 @@ class ApiAdapter implements MarketAdapter {
 		return { direction, advanceDecline: { advancers: up, decliners: down }, avgChangePct: avg }
 	}
 	async getCandles(ticker: string, exchange: 'NSE'|'BSE', tf: Timeframe, lookback: number = 5): Promise<Candle[]> {
-		const url = `${API}/candles/ticker/${ticker}?exchange=${exchange}&tf=${tf}&limit=${tf==='1d'? 120 : 500}`
-		const res = await axios.get(url)
-		return res.data || []
+		try {
+			// First try to fetch from database
+			const url = `${API}/candles/ticker/${ticker}?exchange=${exchange}&tf=${tf}&limit=${tf==='1d'? 120 : 500}`
+			const res = await axios.get(url)
+			const candles = res.data || []
+
+			// If we got data from database, return it
+			if (candles.length > 0) {
+				console.log(`✅ Found ${candles.length} ${tf} candles in database for ${ticker}`)
+				return candles
+			}
+
+			// If no data in database, fetch fresh data from Yahoo Finance
+			console.log(`📊 No ${tf} data in database for ${ticker}, fetching from Yahoo Finance...`)
+
+			try {
+				const fetchUrl = `${API}/candles/fetch?ticker=${ticker}&exchange=${exchange}&tf=${tf}&lookback_days=${lookback}`
+				await axios.post(fetchUrl)
+				console.log(`✅ Successfully fetched and stored ${tf} data from Yahoo Finance`)
+
+				// Try to fetch from database again after population
+				const retryRes = await axios.get(url)
+				const freshCandles = retryRes.data || []
+
+				if (freshCandles.length > 0) {
+					console.log(`✅ Retrieved ${freshCandles.length} fresh ${tf} candles for ${ticker}`)
+					return freshCandles
+				} else {
+					console.warn(`⚠️ Still no ${tf} data after fetching from Yahoo`)
+					return []
+				}
+
+			} catch (fetchError: any) {
+				console.error(`❌ Failed to fetch ${tf} data from Yahoo Finance:`, fetchError.response?.data || fetchError.message)
+				return []
+			}
+
+		} catch (error: any) {
+			console.error(`Failed to fetch candles for ${ticker} from API:`, error)
+			if (error.response?.status === 503) {
+				throw new Error('Database not configured. Please set up SUPABASE_URL and SUPABASE_SERVICE_KEY.')
+			}
+			if (error.response?.status === 404) {
+				throw new Error(`Symbol ${ticker} not found in ${exchange} exchange.`)
+			}
+			throw new Error(`API Error: ${error.response?.data?.detail || error.message}`)
+		}
 	}
 	async getLastPrice(ticker: string, exchange: 'NSE'|'BSE'): Promise<number> {
 		const c = await this.getCandles(ticker, exchange, '1m', 1)
@@ -158,24 +210,48 @@ class MockAdapter implements MarketAdapter {
 		return mockState[key].candles[tf]
 	}
 	async getLastPrice(ticker: string, exchange: 'NSE'|'BSE'): Promise<number> {
-		const cs = await this.getCandles(ticker, exchange, '1m')
-		return cs.length? cs[cs.length-1].close : 0
+		// Use 1m timeframe to get the latest price
+		const cs = await this.getCandles(ticker, exchange, '1m', 1)
+		return cs.length ? cs[cs.length-1].close : 0
 	}
 }
 
+// Cache API adapter and connection status
 let chosen: MarketAdapter | null = null
+let apiConnectionStatus: 'connected' | 'disconnected' | 'unknown' = 'unknown'
+let lastHealthCheck = 0
+const HEALTH_CHECK_INTERVAL = 30000 // Check every 30 seconds instead of every call
 
 export async function getMarketAdapter(): Promise<MarketAdapter> {
 	if (chosen) return chosen
 	if (API) {
+		// Only check health if we haven't checked recently
+		const now = Date.now()
 		try {
-			await axios.get(`${API}/health`, { timeout: 2000 })
+			if (apiConnectionStatus === 'unknown' || (now - lastHealthCheck) > HEALTH_CHECK_INTERVAL) {
+				console.log(`Checking API connection at ${API}`)
+				await axios.get(`${API}/health`, { timeout: 3000 })
+				console.log('✅ API connection successful')
+				apiConnectionStatus = 'connected'
+				lastHealthCheck = now
+			}
+
 			chosen = new ApiAdapter()
 			return chosen
-		} catch {}
+		} catch (error: any) {
+			console.error('❌ API connection failed:', error)
+			apiConnectionStatus = 'disconnected'
+			lastHealthCheck = now
+			throw new Error(`API server not available at ${API}. Please ensure the API server is running on http://localhost:8000`)
+		}
+	} else {
+		console.error('No NEXT_PUBLIC_API_BASE configured')
+		throw new Error('API base URL not configured. Please set NEXT_PUBLIC_API_BASE environment variable.')
 	}
-	chosen = new MockAdapter()
-	return chosen
+}
+
+export function getApiConnectionStatus(): 'connected' | 'disconnected' | 'unknown' {
+	return apiConnectionStatus
 }
 
 

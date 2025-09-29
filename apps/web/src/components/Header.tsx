@@ -7,36 +7,122 @@ import PauseToggle from './PauseToggle'
 const API = process.env.NEXT_PUBLIC_API_BASE
 
 export default function Header() {
-  const [healthy, setHealthy] = useState<boolean | null>(null)
+  const [apiStatus, setApiStatus] = useState<boolean | null>(null)
+  const [dbStatus, setDbStatus] = useState<boolean | null>(null)
+  const [marketStatus, setMarketStatus] = useState<string>('CLOSED')
+  const [refreshRate, setRefreshRate] = useState<string>('OFF')
 
   useEffect(() => {
     let mounted = true
-    const ping = async () => {
+
+    const pingAPI = async () => {
       try {
         const res = await axios.get(`${API}/health`)
         if (!mounted) return
-        setHealthy(res.data?.status === 'ok')
+        setApiStatus(res.data?.status === 'ok')
       } catch {
         if (!mounted) return
-        setHealthy(false)
+        setApiStatus(false)
       }
     }
-    ping()
-    const id = setInterval(ping, 15000)
-    return () => { mounted = false; clearInterval(id) }
+
+    const fetchSystemStatus = async () => {
+      if (!API) return
+      try {
+        const response = await axios.get(`${API}/home/system-status`)
+        if (!mounted) return
+        const status = response.data
+        setDbStatus(status.database_status === 'Connected')
+        setMarketStatus(status.market_status || 'CLOSED')
+        setRefreshRate(status.market_status === 'CLOSED' ? 'OFF' : status.refresh_rate || '10s')
+      } catch (error) {
+        console.error('Failed to fetch system status:', error)
+        setDbStatus(false)
+        setRefreshRate('OFF')
+      }
+    }
+
+    // Initial calls
+    pingAPI()
+    fetchSystemStatus()
+
+    // Set up intervals
+    const apiInterval = setInterval(pingAPI, 15000)
+    const statusInterval = setInterval(fetchSystemStatus, 30000)
+
+    return () => {
+      mounted = false
+      clearInterval(apiInterval)
+      clearInterval(statusInterval)
+    }
   }, [])
 
+  const getStatusColor = (status: boolean | null) => {
+    if (status === null) return 'bg-gray-500 animate-pulse'
+    return status ? 'bg-green-400 animate-pulse' : 'bg-red-400'
+  }
+
+  const getRefreshStatusColor = () => {
+    if (marketStatus === 'CLOSED') return 'bg-gray-500'
+    return 'bg-purple-400 animate-pulse'
+  }
+
   return (
-    <div className="w-full flex items-center justify-between px-4 h-12 bg-surface border-b border-gray-800 rounded-md mb-3">
-      <div className="flex items-center gap-2 text-sm">
-        <span className="font-semibold">AITradingApp</span>
-        <span className="text-gray-500">Paper Trading</span>
-      </div>
+    <div className="w-full flex items-center justify-between">
+      {/* Logo and Title */}
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 text-sm text-gray-400">
-          <span className={`inline-block w-2.5 h-2.5 rounded-full ${healthy===null? 'bg-gray-500 animate-pulse' : healthy? 'bg-green-500' : 'bg-red-500'}`}></span>
-          <span>{healthy===null? 'Checking...' : healthy? 'API Online' : 'API Down'}</span>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
+            <span className="text-white font-bold text-lg">AI</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-white">AI Trading App</h1>
+            <p className="text-xs text-gray-400">Advanced Paper Trading Platform</p>
+          </div>
         </div>
+      </div>
+
+      {/* System Status */}
+      <div className="flex items-center gap-6">
+        {/* API Status */}
+        <div className="flex items-center gap-2">
+          <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(apiStatus)}`}></div>
+          <div className="text-sm">
+            <span className="text-gray-400">API:</span>
+            <span className={`ml-1 font-medium ${apiStatus ? 'text-green-400' : apiStatus === false ? 'text-red-400' : 'text-gray-500'}`}>
+              {apiStatus === null ? 'Checking...' : apiStatus ? 'Online' : 'Offline'}
+            </span>
+          </div>
+        </div>
+
+        {/* Database Status */}
+        <div className="flex items-center gap-2">
+          <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(dbStatus)}`}></div>
+          <div className="text-sm">
+            <span className="text-gray-400">DB:</span>
+            <span className={`ml-1 font-medium ${dbStatus ? 'text-blue-400' : dbStatus === false ? 'text-red-400' : 'text-gray-500'}`}>
+              {dbStatus === null ? 'Checking...' : dbStatus ? 'Connected' : 'Disconnected'}
+            </span>
+          </div>
+        </div>
+
+        {/* Market Status & Refresh */}
+        <div className="flex items-center gap-2">
+          <div className={`w-2.5 h-2.5 rounded-full ${getRefreshStatusColor()}`}></div>
+          <div className="text-sm">
+            <span className="text-gray-400">Market:</span>
+            <span className={`ml-1 font-medium ${marketStatus === 'CLOSED' ? 'text-gray-500' : 'text-purple-400'}`}>
+              {marketStatus === 'CLOSED' ? 'Closed' : 'Open'}
+            </span>
+            <span className="text-gray-500 ml-2">•</span>
+            <span className="text-gray-400 ml-1">Refresh:</span>
+            <span className={`ml-1 font-medium ${marketStatus === 'CLOSED' ? 'text-gray-600' : 'text-purple-400'}`}>
+              {refreshRate}
+            </span>
+          </div>
+        </div>
+
+        {/* Pause Toggle */}
         <PauseToggle />
       </div>
     </div>

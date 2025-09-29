@@ -47,6 +47,7 @@ def fetch_history_df(symbol_id: str, ticker: str, exchange: str, tf: str, lookba
 def scan_once(mode: str, force: bool = False) -> dict:
     sb = get_client()
     # Record run
+    print("Mode ", mode)
     run = sb.table("strategy_runs").insert({"mode": mode}).execute().data[0]
     run_id = run["id"]
     symbols = sb.table("symbols").select("id,ticker,exchange").eq("is_active", True).limit(50).execute().data

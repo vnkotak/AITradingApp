@@ -5,9 +5,12 @@ import axios from 'axios'
 
 const API = process.env.NEXT_PUBLIC_API_BASE
 
-export default function Signals({ ticker = 'RELIANCE', exchange = 'NSE' }: { ticker?: string, exchange?: 'NSE' | 'BSE' }) {
+export default function Signals({ ticker = 'RELIANCE', exchange = 'NSE', isVisible = true }: { ticker?: string, exchange?: 'NSE' | 'BSE', isVisible?: boolean }) {
   const [data, setData] = useState<any[]|null>(null)
   useEffect(() => {
+    // Only run if component is visible
+    if (!isVisible) return
+
     let mounted = true
     let id: any
     const run = async () => {
@@ -27,11 +30,16 @@ export default function Signals({ ticker = 'RELIANCE', exchange = 'NSE' }: { tic
         const rows = await getSignals([{ ticker: ticker!, exchange: exchange! }])
         if (mounted) setData(rows)
       }
-      id = setTimeout(run, 10000)
+
+      // Only schedule next run if still visible and mounted
+      if (mounted && isVisible) {
+        id = setTimeout(run, 10000)
+      }
     }
+
     run()
     return () => { mounted = false; if (id) clearTimeout(id) }
-  }, [ticker, exchange])
+  }, [ticker, exchange, isVisible])
   return (
     <div className="panel p-3">
       <div className="text-sm text-gray-400 mb-2">Latest Signals</div>
@@ -43,7 +51,7 @@ export default function Signals({ ticker = 'RELIANCE', exchange = 'NSE' }: { tic
                 <span className={`font-medium ${s.action==='BUY'?'text-green-500':'text-red-500'}`}>{s.action}</span>
                 <span className="ml-2 text-gray-400">{s.strategy}</span>
               </div>
-              <div className="text-gray-400">{new Date(s.ts).toLocaleTimeString()}</div>
+              <div className="text-gray-400">{new Date(s.ts).toLocaleTimeString('en-IN')}</div>
             </div>
             <div className="mt-1 grid grid-cols-4 gap-2">
               <div>Entry: {Number(s.entry).toFixed(2)}</div>
