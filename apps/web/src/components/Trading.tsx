@@ -120,7 +120,7 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
 
     console.log('🎯 Initializing chart...')
     const width = containerRef.current.clientWidth || 800
-    const height = window.innerWidth < 640 ? 300 : 420
+    const height = 300 // Will be updated by handleResize
 
     console.log('📊 Chart dimensions:', { width, height })
 
@@ -407,7 +407,7 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
         <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
          <TradingStatus />
 
-         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
            {/* Trade Panel */}
            <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
              <div className="flex items-center gap-2 mb-4 sm:mb-6">
@@ -539,8 +539,6 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
                  ref={containerRef}
                  className="w-full h-[300px] sm:h-[420px] min-h-[300px] sm:min-h-[420px] relative"
                  style={{
-                   minHeight: window.innerWidth < 640 ? '300px' : '420px',
-                   height: window.innerWidth < 640 ? '300px' : '420px',
                    backgroundColor: '#0b0f15'
                  }}
                />

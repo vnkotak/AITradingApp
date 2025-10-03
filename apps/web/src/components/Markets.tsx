@@ -201,7 +201,7 @@ function MarketIndices({ indices, lastUpdate, loading }: { indices: any[]; lastU
            </div>
          )}
        </div>
-       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
+       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
          {loading ? (
            // Loading state for indices
            [1, 2, 3, 4].map((i) => (
@@ -253,7 +253,7 @@ function MarketIndices({ indices, lastUpdate, loading }: { indices: any[]; lastU
 // ===== TOP MOVERS SECTION =====
 function TopMovers({ gainers, losers, loading }: { gainers: any[]; losers: any[]; loading?: boolean }) {
    return (
-     <div className="grid sm:grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 mb-6 sm:mb-8">
+     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8 mb-6 sm:mb-8">
       {/* Top Gainers */}
       <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
         <h3 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4 flex items-center gap-2">

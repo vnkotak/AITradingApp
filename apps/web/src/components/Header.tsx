@@ -83,9 +83,9 @@ export default function Header() {
       </div>
 
       {/* System Status - Mobile Responsive */}
-      <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
-        {/* Mobile: Compact Status Indicators */}
-        <div className="hidden sm:flex items-center gap-3 md:gap-6">
+      <div className="flex items-center gap-2 md:gap-3 lg:gap-4 xl:gap-6 flex-shrink-0">
+        {/* Desktop: Full Status Indicators */}
+        <div className="hidden md:flex items-center gap-3 lg:gap-4 xl:gap-6">
           {/* API Status */}
           <div className="flex items-center gap-1 sm:gap-2">
             <div className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full ${getStatusColor(apiStatus)}`}></div>
@@ -125,8 +125,8 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Mobile: Collapsed Status Indicators */}
-        <div className="flex sm:hidden items-center gap-1">
+        {/* Tablet/Mobile: Collapsed Status Indicators */}
+        <div className="flex md:hidden items-center gap-1">
           <div className={`w-2 h-2 rounded-full ${getStatusColor(apiStatus)}`} title="API Status"></div>
           <div className={`w-2 h-2 rounded-full ${getStatusColor(dbStatus)}`} title="Database Status"></div>
           <div className={`w-2 h-2 rounded-full ${getRefreshStatusColor()}`} title="Market Status"></div>

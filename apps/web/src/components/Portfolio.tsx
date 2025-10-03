@@ -76,7 +76,7 @@ export default function Portfolio() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
                       <div className="bg-slate-900/30 rounded-lg p-2 sm:p-3">
                         <div className="text-xs text-gray-400 mb-1">Quantity</div>
                         <div className="text-sm sm:text-lg font-semibold text-white">{p.qty}</div>
