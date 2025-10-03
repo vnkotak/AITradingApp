@@ -48,33 +48,46 @@ export default function Home() {
           <div className="absolute left-0 right-0 h-full bg-slate-800/10 backdrop-blur-sm border-y border-slate-700/10"></div>
 
           {/* Navigation Content */}
-          <div className="relative flex mx-auto w-full max-w-4xl px-2 sm:px-4">
-            {/* Tab Container - Centered Layout */}
-            <div className="flex w-full justify-center items-center gap-1 sm:gap-2">
+          <div className="relative flex mx-auto w-full max-w-5xl px-2 sm:px-4">
+            {/* Mobile: Compact Centered Layout */}
+            <div className="flex w-full justify-center items-center gap-1 sm:gap-2 md:hidden">
               {tabs.map((tab, index) => {
                 const isActive = activeTab === tab;
-                const tabWidth = tabs.length <= 3 ? `${100 / tabs.length}%` : 'auto';
-
                 return (
-                  <div key={tab} className="relative" style={{ flex: tabs.length <= 3 ? '1' : 'none' }}>
+                  <div key={tab} className="relative">
                     <button
                       onClick={() => setActiveTab(tab)}
-                      className={`relative z-10 w-full px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-semibold transition-all duration-300 rounded-lg ${
-                        isActive
-                          ? 'text-white'
-                          : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      className={`relative z-10 px-1 sm:px-2 py-2 text-xs font-semibold transition-all duration-300 rounded-lg ${
+                        isActive ? 'text-white' : 'text-gray-400 hover:text-white'
                       }`}
-                      style={{
-                        minWidth: tabs.length > 3 ? '60px' : tabWidth,
-                        flex: tabs.length <= 3 ? '1' : 'none'
-                      }}
+                      style={{ minWidth: '50px' }}
                     >
                       {tab}
                     </button>
-
-                    {/* Individual tab background indicator */}
                     {isActive && (
-                      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/30 to-purple-600/30 rounded-lg border border-blue-500/40 z-0"></div>
+                      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/30 to-purple-600/30 rounded-lg border border-blue-500/40"></div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop: Spacious Centered Layout */}
+            <div className="hidden md:flex w-full justify-center items-center gap-4 lg:gap-6">
+              {tabs.map((tab, index) => {
+                const isActive = activeTab === tab;
+                return (
+                  <div key={tab} className="relative">
+                    <button
+                      onClick={() => setActiveTab(tab)}
+                      className={`relative z-10 px-4 lg:px-6 py-3 text-sm lg:text-base font-semibold transition-all duration-300 rounded-lg ${
+                        isActive ? 'text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                    {isActive && (
+                      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/30 to-purple-600/30 rounded-lg border border-blue-500/40"></div>
                     )}
                   </div>
                 );
