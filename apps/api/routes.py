@@ -123,7 +123,8 @@ def get_candles(
     ticker: str,
     exchange: Literal['NSE', 'BSE'] = 'NSE',
     tf: str = '1m',
-    limit: int = 500
+    limit: int = 500,
+    fresh: bool = False  # Add parameter to force fresh data fetch
 ):
     sb = get_client()
     if not sb:
@@ -147,7 +148,40 @@ def get_candles(
 
         sym = res.data[0]
 
-        # Fetch candles
+        # If fresh data is requested, fetch from Yahoo Finance first
+        if fresh:
+            print(f"📊 Fetching fresh {tf} data from Yahoo Finance for {ticker}")
+            try:
+                # Fetch fresh data from Yahoo Finance
+                fresh_candles = fetch_yahoo_candles(ticker, exchange, tf, lookback_days=2)
+
+                if fresh_candles and len(fresh_candles) > 0:
+                    # Filter out zero-value candles before storing
+                    valid_candles = [c for c in fresh_candles if c.get("open", 0) > 0 and c.get("close", 0) > 0]
+                    zero_candles = len(fresh_candles) - len(valid_candles)
+
+                    if zero_candles > 0:
+                        print(f"⚠️ Filtered out {zero_candles} zero-value candles from Yahoo data")
+
+                    # Store only valid candles in database
+                    rows = [{
+                        "symbol_id": sym["id"],
+                        "timeframe": tf,
+                        "ts": c["ts"],
+                        "open": c["open"],
+                        "high": c["high"],
+                        "low": c["low"],
+                        "close": c["close"],
+                        "volume": c.get("volume"),
+                    } for c in valid_candles]
+
+                    if rows:
+                        sb.table("candles").upsert(rows, on_conflict="symbol_id,timeframe,ts").execute()
+                        print(f"✅ Stored {len(rows)} valid {tf} candles for {ticker} (filtered {zero_candles} zero values)")
+            except Exception as e:
+                print(f"⚠️ Failed to fetch fresh data from Yahoo: {e}")
+
+        # Fetch candles from database
         candles_res = (
             sb.table("candles")
             .select("ts,open,high,low,close,volume,vwap")

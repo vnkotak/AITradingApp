@@ -106,6 +106,7 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
       }, [API, apiConnected])
    const [autoTrading, setAutoTrading] = useState(false)
    const [lastSignal, setLastSignal] = useState<any>(null)
+   const [forceRefresh, setForceRefresh] = useState(0) // Force refresh trigger
    const containerRef = useRef<HTMLDivElement>(null)
    const chartRef = useRef<any>(null)
    const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -257,16 +258,37 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
         // Show loading state with indication that it might fetch fresh data
         console.log(`📊 Checking database for ${tf} data...`)
 
-        const ad = await getMarketAdapter()
-        console.log('📡 Market adapter obtained, fetching candles...')
+        // Always fetch fresh data from Yahoo Finance for real-time charts
+        console.log(`📡 Fetching fresh ${tf} candles from Yahoo Finance for ${symbol.ticker}...`)
 
-        const cs = await ad.getCandles(symbol.ticker, symbol.exchange, tf, 100)
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE
+        if (!API_BASE) {
+          throw new Error('API base URL not configured')
+        }
+
+        // Directly fetch from Yahoo Finance via our API endpoint
+        const fetchUrl = `${API_BASE}/candles/fetch?ticker=${symbol.ticker}&exchange=${symbol.exchange}&tf=${tf}&lookback_days=${tf === '1m' ? 2 : tf === '5m' ? 5 : 30}`
+        await axios.post(fetchUrl)
+        console.log(`✅ Successfully fetched fresh ${tf} data from Yahoo Finance`)
+
+        // Now fetch the fresh data from database using fresh=true parameter
+        const candlesUrl = `${API_BASE}/candles/ticker/${symbol.ticker}?exchange=${symbol.exchange}&tf=${tf}&limit=100&fresh=true`
+        const candlesRes = await axios.get(candlesUrl)
+        let cs: Candle[] = candlesRes.data || []
+
+        // If no data from direct API call, try the marketAdapter as fallback
+        if (cs.length === 0) {
+          console.log('📊 No data from direct API, trying marketAdapter...')
+          const ad = await getMarketAdapter()
+          cs = await ad.getCandles(symbol.ticker, symbol.exchange, tf, 100)
+        }
+
         if (!mounted) return
 
         console.log(`✅ Loaded ${cs?.length || 0} ${tf} candles`)
 
         if (cs && cs.length > 0) {
-          // Validate candle data
+          // Filter out zero-value candles and invalid data
           const validCandles = cs.filter(c =>
             c &&
             c.ts &&
@@ -274,18 +296,26 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
             typeof c.high === 'number' &&
             typeof c.low === 'number' &&
             typeof c.close === 'number' &&
-            !isNaN(c.open) && !isNaN(c.close)
+            !isNaN(c.open) && !isNaN(c.close) &&
+            c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0 // Filter out zero values
           )
 
-          console.log(`🔍 ${validCandles.length}/${cs.length} candles are valid`)
+          const zeroCandles = cs.filter(c => c.open === 0 || c.high === 0 || c.low === 0 || c.close === 0).length
+          console.log(`🔍 ${validCandles.length}/${cs.length} candles are valid (${zeroCandles} zero-value candles filtered out)`)
+
+          // Check if we have too many zero values (might indicate data quality issue)
+          const zeroPercentage = (zeroCandles / cs.length) * 100
+          if (zeroPercentage > 50) {
+            console.warn(`⚠️ High percentage of zero values (${zeroPercentage.toFixed(1)}%) - data quality may be poor`)
+          }
 
           if (validCandles.length > 0) {
             setCandles(validCandles)
             const last = validCandles[validCandles.length - 1].close
-            console.log(`💰 Last candle price: ₹${last}`)
+            console.log(`💰 Last candle price: ₹${last} (${validCandles.length} valid candles)`)
             markPrice(symbol.ticker, symbol.exchange, last)
           } else {
-            console.warn('⚠️ No valid candles after validation')
+            console.warn(`⚠️ No valid candles after filtering zero values (${zeroCandles} zero-value candles found)`)
             setCandles([])
           }
         } else {
@@ -293,8 +323,8 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
           setCandles([])
         }
 
-        // Auto-refresh based on timeframe (reduced frequency to reduce DB load)
-        const refreshInterval = tf === '1m' ? 60000 : tf === '5m' ? 120000 : 300000 // 1m=1min, 5m=2min, others=5min
+        // Auto-refresh based on timeframe - fetch fresh data from Yahoo Finance
+        const refreshInterval = tf === '1m' ? 30000 : tf === '5m' ? 60000 : tf === '15m' ? 120000 : 300000 // More frequent for real-time data
         timer = setTimeout(loadCandles, refreshInterval)
 
       } catch (error) {
@@ -314,7 +344,7 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
       mounted = false
       if (timer) clearTimeout(timer)
     }
-  }, [symbol, tf, markPrice])
+  }, [symbol, tf, markPrice, forceRefresh])
 
   // Handle timeframe changes and price scale updates
   useEffect(() => {
@@ -347,20 +377,29 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
     try {
       // Process candle data with proper time formatting
       const data = candles
-        .filter(c => c && c.ts && !isNaN(c.open) && !isNaN(c.close)) // Filter out invalid candles
+        .filter(c => c && c.ts && !isNaN(c.open) && !isNaN(c.close) && c.open > 0 && c.close > 0) // Filter out invalid and zero-value candles
         .map((c, index) => {
-          const timestamp = Math.floor(new Date(c.ts).getTime() / 1000) as UTCTimestamp
+          // Convert to IST timestamp for proper Indian market hours display
+          // Yahoo Finance timestamps are in UTC, we need to convert to IST for display
+          const utcTime = new Date(c.ts).getTime()
+          const istOffset = 5.5 * 60 * 60 * 1000 // IST is UTC + 5:30
+          const istTime = utcTime + istOffset
+          const timestamp = Math.floor(istTime / 1000) as UTCTimestamp
 
-          // Debug first and last candles
+          // Debug first and last candles with timezone conversion
           if (index === 0 || index === candles.length - 1) {
-            console.log(`Candle ${index}:`, {
-              time: c.ts,
-              timestamp,
-              open: c.open,
-              high: c.high,
-              low: c.low,
-              close: c.close,
-              date: new Date(c.ts).toLocaleString()
+            const utcTime = new Date(c.ts).getTime()
+            const istTime = utcTime + (5.5 * 60 * 60 * 1000) // IST = UTC + 5:30
+            const istDate = new Date(istTime)
+
+            console.log(`Candle ${index} (timezone conversion):`, {
+              originalUTC: c.ts,
+              originalUTCTime: new Date(c.ts).toLocaleString(),
+              convertedIST: istDate.toISOString(),
+              convertedISTTime: istDate.toLocaleString('en-IN'),
+              originalTimestamp: Math.floor(new Date(c.ts).getTime() / 1000),
+              convertedTimestamp: timestamp,
+              price: `${c.open} → ${c.close}`
             })
           }
 
@@ -384,12 +423,16 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
       // Set data on the series
       seriesRef.current.setData(data)
 
-      // Configure time scale for proper display
+      // Configure time scale for IST display
       chartRef.current.timeScale().applyOptions({
         timeVisible: true,
         secondsVisible: false,
         borderVisible: true,
       })
+
+      // Apply IST formatting to time scale after chart is created
+      // Note: LightweightCharts displays time in the user's local timezone by default
+      // The timestamp conversion to IST should handle the timezone display
 
       // Configure price scale for better auto-scaling
       chartRef.current.priceScale('right').applyOptions({
@@ -587,15 +630,27 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
 
            {/* Chart Panel */}
            <div className="xl:col-span-2 bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
-             <div className="flex items-center gap-2 mb-3 sm:mb-4">
-               <div className="w-2 h-6 sm:h-8 bg-purple-500 rounded-full"></div>
-               <h3 className="text-lg sm:text-xl font-bold text-white">Price Chart</h3>
-               {candles === null && (
-                 <div className="flex items-center gap-1 text-purple-400 text-sm">
-                   <div className="w-1 h-1 bg-purple-400 rounded-full animate-pulse"></div>
-                   <span>Loading {tf} data{apiConnected ? ' (auto-fetching if needed)...' : '...'}</span>
-                 </div>
-               )}
+             <div className="flex items-center justify-between mb-3 sm:mb-4">
+               <div className="flex items-center gap-2">
+                 <div className="w-2 h-6 sm:h-8 bg-purple-500 rounded-full"></div>
+                 <h3 className="text-lg sm:text-xl font-bold text-white">Price Chart</h3>
+                 {candles === null && (
+                   <div className="flex items-center gap-1 text-purple-400 text-sm">
+                     <div className="w-1 h-1 bg-purple-400 rounded-full animate-pulse"></div>
+                     <span>Loading {tf} data{apiConnected ? ' (auto-fetching if needed)...' : '...'}</span>
+                   </div>
+                 )}
+               </div>
+
+               {/* Manual Refresh Button */}
+               <button
+                 onClick={() => setForceRefresh(prev => prev + 1)}
+                 className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg transition-colors flex items-center gap-1"
+                 title="Refresh chart data"
+               >
+                 <span>🔄</span>
+                 <span className="hidden sm:inline">Refresh</span>
+               </button>
              </div>
              <div className="rounded-xl overflow-hidden border border-slate-600/50 relative bg-slate-900 h-[320px] sm:h-[480px] lg:h-[520px] chart-container">
                <div

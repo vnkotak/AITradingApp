@@ -65,16 +65,16 @@ class ApiAdapter implements MarketAdapter {
 		const direction = avg > 0.2 ? 'BULLISH' : (avg < -0.2 ? 'BEARISH' : 'NEUTRAL')
 		return { direction, advanceDecline: { advancers: up, decliners: down }, avgChangePct: avg }
 	}
-	async getCandles(ticker: string, exchange: 'NSE'|'BSE', tf: Timeframe, lookback: number = 5): Promise<Candle[]> {
+	async getCandles(ticker: string, exchange: 'NSE'|'BSE', tf: Timeframe, lookback: number = 5, fresh: boolean = false): Promise<Candle[]> {
 		try {
-			// First try to fetch from database
-			const url = `${API}/candles/ticker/${ticker}?exchange=${exchange}&tf=${tf}&limit=${tf==='1d'? 120 : 500}`
+			// Fetch from database (with fresh data if requested)
+			const url = `${API}/candles/ticker/${ticker}?exchange=${exchange}&tf=${tf}&limit=${tf==='1d'? 120 : 500}&fresh=${fresh}`
 			const res = await axios.get(url)
 			const candles = res.data || []
 
 			// If we got data from database, return it
 			if (candles.length > 0) {
-				console.log(`✅ Found ${candles.length} ${tf} candles in database for ${ticker}`)
+				console.log(`✅ Found ${candles.length} ${tf} candles in database for ${ticker}${fresh ? ' (fresh data)' : ''}`)
 				return candles
 			}
 
