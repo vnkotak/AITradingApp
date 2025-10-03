@@ -10,10 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Call scanner 15m
-        env:
-          API_BASE: ${{ secrets.API_BASE }}
-          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
         run: |
-          curl -sS -X POST "$API_BASE/scanner/run?mode=15m" -H "Authorization: Bearer $SCANNER_TOKEN" || true
+          curl -sS -X POST "https://aitradingapp.onrender.com/scanner/run?mode=15m"
 
 
