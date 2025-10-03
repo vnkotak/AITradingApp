@@ -43,41 +43,42 @@ export default function Home() {
 
       {/* Mobile-Responsive Navigation */}
       <div className="w-full">
-        <div className="relative flex items-center">
+        <div className="relative flex items-center min-h-[48px] sm:min-h-[56px]">
           {/* Full-Width Background */}
           <div className="absolute left-0 right-0 h-full bg-slate-800/10 backdrop-blur-sm border-y border-slate-700/10"></div>
 
-          {/* Mobile-First Navigation Content */}
-          <div className="relative flex mx-auto w-full max-w-4xl p-1 sm:p-2">
-            {/* Mobile: Compact layout, Desktop: Spaced layout */}
-            <div className={`flex w-full ${tabs.length <= 3 ? 'justify-center' : 'justify-between md:justify-center'}`}>
-              {/* Sliding Background Indicator - Hidden on mobile for simplicity */}
-              <div
-                className={`absolute top-1 sm:top-2 bottom-1 sm:bottom-2 bg-gradient-to-r from-blue-600/30 to-purple-600/30 rounded-lg border border-blue-500/40 transition-all duration-500 ease-out hidden md:block`}
-                style={{
-                  width: `${100 / tabs.length}%`,
-                  transform: `translateX(${tabs.indexOf(activeTab) * 100}%)`
-                }}
-              />
+          {/* Navigation Content */}
+          <div className="relative flex mx-auto w-full max-w-4xl px-2 sm:px-4">
+            {/* Tab Container - Centered Layout */}
+            <div className="flex w-full justify-center items-center gap-1 sm:gap-2">
+              {tabs.map((tab, index) => {
+                const isActive = activeTab === tab;
+                const tabWidth = tabs.length <= 3 ? `${100 / tabs.length}%` : 'auto';
 
-              {/* Tab Buttons - Mobile Responsive */}
-              {tabs.map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`relative z-10 flex-1 md:flex-none px-2 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-semibold transition-all duration-300 rounded-lg ${
-                    activeTab === tab
-                      ? 'text-white bg-blue-600/20 md:bg-transparent'
-                      : 'text-gray-400 hover:text-white hover:bg-white/5'
-                  }`}
-                  style={{
-                    minWidth: tabs.length > 3 ? '60px' : 'auto',
-                    flex: tabs.length <= 3 ? '1' : 'none'
-                  }}
-                >
-                  {tab}
-                </button>
-              ))}
+                return (
+                  <div key={tab} className="relative" style={{ flex: tabs.length <= 3 ? '1' : 'none' }}>
+                    <button
+                      onClick={() => setActiveTab(tab)}
+                      className={`relative z-10 w-full px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-semibold transition-all duration-300 rounded-lg ${
+                        isActive
+                          ? 'text-white'
+                          : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      }`}
+                      style={{
+                        minWidth: tabs.length > 3 ? '60px' : tabWidth,
+                        flex: tabs.length <= 3 ? '1' : 'none'
+                      }}
+                    >
+                      {tab}
+                    </button>
+
+                    {/* Individual tab background indicator */}
+                    {isActive && (
+                      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/30 to-purple-600/30 rounded-lg border border-blue-500/40 z-0"></div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
