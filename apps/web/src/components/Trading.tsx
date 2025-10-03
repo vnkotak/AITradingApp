@@ -24,7 +24,7 @@ function TradingStatus() {
            <div className="w-2 h-6 sm:h-8 bg-blue-500 rounded-full"></div>
            <h3 className="text-lg sm:text-xl font-bold text-white">Portfolio Status</h3>
          </div>
-         <div className="grid grid-cols-3 gap-3 sm:gap-6">
+         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6">
          <div className="bg-white/5 rounded-xl p-4 border border-white/10">
            <div className="text-sm text-gray-300 mb-1">Available Cash</div>
            <div className="text-2xl font-bold text-white">₹{cash.toLocaleString('en-IN')}</div>
@@ -119,10 +119,13 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
     }
 
     console.log('🎯 Initializing chart...')
-    const width = containerRef.current.clientWidth || 800
-    const height = 300 // Will be updated by handleResize
 
-    console.log('📊 Chart dimensions:', { width, height })
+    // Get container dimensions
+    const rect = containerRef.current.getBoundingClientRect()
+    const width = Math.max(100, rect.width)
+    const height = Math.max(100, rect.height)
+
+    console.log('📊 Chart container dimensions:', { width, height })
 
     const chart = createChart(containerRef.current, {
       width: width,
@@ -143,7 +146,14 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
       },
       rightPriceScale: {
         borderColor: '#485158',
-        textColor: '#9ca3af'
+        textColor: '#9ca3af',
+        autoScale: true,
+        mode: 0,
+        entireTextOnly: false,
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0.1,
+        },
       },
       crosshair: {
         mode: 1,
@@ -173,9 +183,32 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
     console.log('✅ Chart and series created successfully')
 
     const handleResize = () => {
-      const newWidth = containerRef.current?.clientWidth || 800
-      console.log('🔄 Resizing chart to:', newWidth)
-      chart.applyOptions({ width: newWidth })
+      if (!containerRef.current || !chart) return
+
+      const rect = containerRef.current.getBoundingClientRect()
+      const newWidth = Math.max(100, rect.width)
+      const newHeight = Math.max(100, rect.height)
+
+      console.log('🔄 Resizing chart:', {
+        containerWidth: rect.width,
+        containerHeight: rect.height,
+        chartWidth: newWidth,
+        chartHeight: newHeight
+      })
+
+      chart.applyOptions({
+        width: newWidth,
+        height: newHeight
+      })
+    }
+
+    // Use ResizeObserver for more reliable resizing
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize()
+    })
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current)
     }
 
     window.addEventListener('resize', handleResize)
@@ -183,6 +216,7 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
     return () => {
       console.log('🧹 Cleaning up chart')
       window.removeEventListener('resize', handleResize)
+      resizeObserver.disconnect()
       chart.remove()
       seriesRef.current = null
       chartRef.current = null
@@ -282,6 +316,16 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
     }
   }, [symbol, tf, markPrice])
 
+  // Handle timeframe changes and price scale updates
+  useEffect(() => {
+    if (candles && candles.length > 0 && chartRef.current) {
+      // Reset price scale when candles data changes
+      chartRef.current.priceScale('right').applyOptions({
+        autoScale: true,
+      })
+    }
+  }, [tf, candles])
+
   useEffect(() => {
     if (!candles || !seriesRef.current || !chartRef.current) {
       console.log('❌ Chart not ready:', {
@@ -347,8 +391,27 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
         borderVisible: true,
       })
 
+      // Configure price scale for better auto-scaling
+      chartRef.current.priceScale('right').applyOptions({
+        autoScale: true,
+        mode: 0,
+        entireTextOnly: false,
+        visible: true,
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0.1,
+        },
+      })
+
       // Fit content to show all data
       chartRef.current.timeScale().fitContent()
+
+      // Force price scale to fit the data range
+      setTimeout(() => {
+        chartRef.current.priceScale('right').applyOptions({
+          autoScale: true,
+        })
+      }, 100)
 
       console.log('✅ Chart data set successfully')
 
@@ -407,9 +470,9 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
         <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
          <TradingStatus />
 
-         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
+         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-5 xl:gap-6">
            {/* Trade Panel */}
-           <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
+           <div className="xl:col-span-1 bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
              <div className="flex items-center gap-2 mb-4 sm:mb-6">
                <div className="w-2 h-6 sm:h-8 bg-green-500 rounded-full"></div>
                <h3 className="text-lg sm:text-xl font-bold text-white">Trading Panel</h3>
@@ -523,7 +586,7 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
            </div>
 
            {/* Chart Panel */}
-           <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
+           <div className="xl:col-span-2 bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
              <div className="flex items-center gap-2 mb-3 sm:mb-4">
                <div className="w-2 h-6 sm:h-8 bg-purple-500 rounded-full"></div>
                <h3 className="text-lg sm:text-xl font-bold text-white">Price Chart</h3>
@@ -534,10 +597,10 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
                  </div>
                )}
              </div>
-             <div className="rounded-xl overflow-hidden border border-slate-600/50 relative bg-slate-900">
+             <div className="rounded-xl overflow-hidden border border-slate-600/50 relative bg-slate-900 h-[320px] sm:h-[480px] lg:h-[520px] chart-container">
                <div
                  ref={containerRef}
-                 className="w-full h-[300px] sm:h-[420px] min-h-[300px] sm:min-h-[420px] relative"
+                 className="w-full h-full"
                  style={{
                    backgroundColor: '#0b0f15'
                  }}
