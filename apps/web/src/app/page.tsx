@@ -36,42 +36,49 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900">
-      {/* Full-Width Header - Compact */}
-      <div className="w-full px-4 py-1.5">
+      {/* Mobile-Responsive Header */}
+      <div className="w-full px-2 sm:px-4 py-1 sm:py-1.5">
         <Header />
       </div>
 
-      {/* Full-Width Navigation - End to End */}
+      {/* Mobile-Responsive Navigation */}
       <div className="w-full">
         <div className="relative flex items-center">
           {/* Full-Width Background */}
           <div className="absolute left-0 right-0 h-full bg-slate-800/10 backdrop-blur-sm border-y border-slate-700/10"></div>
 
-          {/* Centered Navigation Content */}
-          <div className="relative flex mx-auto max-w-4xl w-full p-2">
-            {/* Sliding Background Indicator */}
-            <div
-              className="absolute top-2 bottom-2 bg-gradient-to-r from-blue-600/30 to-purple-600/30 rounded-lg border border-blue-500/40 transition-all duration-500 ease-out"
-              style={{
-                width: `${100 / tabs.length}%`,
-                transform: `translateX(${tabs.indexOf(activeTab) * 100}%)`
-              }}
-            />
+          {/* Mobile-First Navigation Content */}
+          <div className="relative flex mx-auto w-full max-w-4xl p-1 sm:p-2">
+            {/* Mobile: Compact layout, Desktop: Spaced layout */}
+            <div className={`flex w-full ${tabs.length <= 3 ? 'justify-center' : 'justify-between sm:justify-center'}`}>
+              {/* Sliding Background Indicator - Hidden on mobile for simplicity */}
+              <div
+                className={`absolute top-1 sm:top-2 bottom-1 sm:bottom-2 bg-gradient-to-r from-blue-600/30 to-purple-600/30 rounded-lg border border-blue-500/40 transition-all duration-500 ease-out hidden sm:block`}
+                style={{
+                  width: `${100 / tabs.length}%`,
+                  transform: `translateX(${tabs.indexOf(activeTab) * 100}%)`
+                }}
+              />
 
-            {/* Tab Buttons */}
-            {tabs.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`relative z-10 flex-1 px-4 py-3 text-sm font-semibold transition-all duration-300 rounded-lg ${
-                  activeTab === tab
-                    ? 'text-white'
-                    : 'text-gray-400 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
+              {/* Tab Buttons - Mobile Responsive */}
+              {tabs.map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`relative z-10 flex-1 sm:flex-none px-1 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-semibold transition-all duration-300 rounded-lg ${
+                    activeTab === tab
+                      ? 'text-white bg-blue-600/20 sm:bg-transparent'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  }`}
+                  style={{
+                    minWidth: tabs.length > 3 ? '60px' : 'auto',
+                    flex: tabs.length <= 3 ? '1' : 'none'
+                  }}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>

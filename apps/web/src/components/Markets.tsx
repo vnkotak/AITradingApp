@@ -26,7 +26,7 @@ function HeroSection({ data, isUpdating, marketStatus, onManualRefresh, manualRe
   // Show hero section immediately with available data (even if loading)
 
   return (
-    <div className={`relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 rounded-3xl p-8 mb-8 transition-all duration-500 ${isUpdating ? 'ring-2 ring-blue-500/30 shadow-lg shadow-blue-500/10' : ''}`}>
+     <div className={`relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 rounded-2xl sm:rounded-3xl p-4 sm:p-8 mb-6 sm:mb-8 transition-all duration-500 ${isUpdating ? 'ring-2 ring-blue-500/30 shadow-lg shadow-blue-500/10' : ''}`}>
       {/* Animated background elements */}
       <div className="absolute inset-0">
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
@@ -163,7 +163,7 @@ function HeroSection({ data, isUpdating, marketStatus, onManualRefresh, manualRe
 function HeroSkeleton() {
   return (
     <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 mb-8 animate-pulse">
-      <div className="grid lg:grid-cols-3 gap-8 items-center">
+      <div className="grid lg:grid-cols-3 gap-4 sm:gap-8 items-center">
         <div className="space-y-4">
           <div className="h-8 bg-slate-700 rounded w-32"></div>
           <div className="h-12 bg-slate-700 rounded w-48"></div>
@@ -190,10 +190,10 @@ function HeroSkeleton() {
 function MarketIndices({ indices, lastUpdate, loading }: { indices: any[]; lastUpdate: Date | null; loading?: boolean }) {
    return (
      <div className="mb-8">
-       <div className="flex items-center justify-between mb-6">
-         <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-           <div className="w-2 h-8 bg-blue-500 rounded-full"></div>
-           Market Indices
+       <div className="flex items-center justify-between mb-4 sm:mb-6">
+         <h2 className="text-lg sm:text-2xl font-bold text-white flex items-center gap-2 sm:gap-3">
+           <div className="w-2 h-6 sm:h-8 bg-blue-500 rounded-full"></div>
+           <span className="truncate">Market Indices</span>
          </h2>
          {lastUpdate && (
            <div className="text-xs text-gray-400">
@@ -201,11 +201,11 @@ function MarketIndices({ indices, lastUpdate, loading }: { indices: any[]; lastU
            </div>
          )}
        </div>
-       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
          {loading ? (
            // Loading state for indices
            [1, 2, 3, 4].map((i) => (
-             <div key={i} className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/50">
+             <div key={i} className="bg-slate-800/50 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/50">
                <div className="animate-pulse space-y-4">
                  <div className="flex items-center justify-between">
                    <div className="h-4 bg-slate-700 rounded w-20"></div>
@@ -221,14 +221,14 @@ function MarketIndices({ indices, lastUpdate, loading }: { indices: any[]; lastU
          ) : indices?.map((index, idx) => (
           <div
             key={index.name}
-            className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/50 hover:border-slate-600/50 transition-all duration-500 hover:scale-105 hover:shadow-xl hover:shadow-blue-500/10 group"
+            className="bg-slate-800/50 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/50 hover:border-slate-600/50 transition-all duration-500 hover:scale-105 hover:shadow-xl hover:shadow-blue-500/10 group"
             style={{ animationDelay: `${idx * 100}ms` }}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-white group-hover:text-blue-300 transition-colors duration-300">{index.name}</h3>
-              <div className={`w-3 h-3 rounded-full transition-all duration-500 ${index.changePercent >= 0 ? 'bg-green-400 shadow-lg shadow-green-400/30' : 'bg-red-400 shadow-lg shadow-red-400/30'} animate-pulse`}></div>
+              <h3 className="font-semibold text-white group-hover:text-blue-300 transition-colors duration-300 text-sm sm:text-base truncate">{index.name}</h3>
+              <div className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full transition-all duration-500 ${index.changePercent >= 0 ? 'bg-green-400 shadow-lg shadow-green-400/30' : 'bg-red-400 shadow-lg shadow-red-400/30'} animate-pulse`}></div>
             </div>
-            <div className="text-3xl font-bold text-white mb-3 group-hover:scale-105 transition-transform duration-300">
+            <div className="text-xl sm:text-3xl font-bold text-white mb-2 sm:mb-3 group-hover:scale-105 transition-transform duration-300">
               ₹<AnimatedNumber value={index.value} />
             </div>
             <div className={`flex items-center gap-2 transition-all duration-500 ${index.changePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -253,12 +253,12 @@ function MarketIndices({ indices, lastUpdate, loading }: { indices: any[]; lastU
 // ===== TOP MOVERS SECTION =====
 function TopMovers({ gainers, losers, loading }: { gainers: any[]; losers: any[]; loading?: boolean }) {
    return (
-     <div className="grid lg:grid-cols-2 gap-8 mb-8">
+     <div className="grid sm:grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 mb-6 sm:mb-8">
       {/* Top Gainers */}
-      <div className="bg-slate-800/30 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/30">
-        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-          <div className="w-2 h-6 bg-green-500 rounded-full"></div>
-          Top Gainers
+      <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
+        <h3 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4 flex items-center gap-2">
+          <div className="w-2 h-4 sm:h-6 bg-green-500 rounded-full"></div>
+          <span className="truncate">Top Gainers</span>
         </h3>
         <div className="space-y-3">
           {loading ? (
@@ -299,10 +299,10 @@ function TopMovers({ gainers, losers, loading }: { gainers: any[]; losers: any[]
       </div>
 
       {/* Top Losers */}
-      <div className="bg-slate-800/30 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/30">
-        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-          <div className="w-2 h-6 bg-red-500 rounded-full"></div>
-          Top Losers
+      <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
+        <h3 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4 flex items-center gap-2">
+          <div className="w-2 h-4 sm:h-6 bg-red-500 rounded-full"></div>
+          <span className="truncate">Top Losers</span>
         </h3>
         <div className="space-y-3">
           {loading ? (
@@ -348,10 +348,10 @@ function TopMovers({ gainers, losers, loading }: { gainers: any[]; losers: any[]
 // ===== AI SIGNALS SHOWCASE =====
 function AISignalsShowcase({ signals }: { signals: any[] }) {
   return (
-    <div className="mb-8">
-      <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-        <div className="w-2 h-8 bg-purple-500 rounded-full"></div>
-        AI Trading Signals
+    <div className="mb-6 sm:mb-8">
+      <h2 className="text-lg sm:text-2xl font-bold text-white mb-4 sm:mb-6 flex items-center gap-2 sm:gap-3">
+        <div className="w-2 h-6 sm:h-8 bg-purple-500 rounded-full"></div>
+        <span className="truncate">AI Trading Signals</span>
       </h2>
       <div className="bg-gradient-to-r from-purple-900/20 to-blue-900/20 backdrop-blur-sm rounded-2xl p-6 border border-purple-700/30">
         <div className="grid lg:grid-cols-3 gap-6">
@@ -477,12 +477,12 @@ function MarketHeatmap({ marketStatus, isVisible, shouldLoad }: { marketStatus?:
   }, {} as Record<string, any[]>)
 
   return (
-    <div className="mb-8">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-          <div className="w-2 h-8 bg-orange-500 rounded-full"></div>
-          Market Heatmap
-          <span className="text-sm text-gray-400 font-normal">
+    <div className="mb-6 sm:mb-8">
+      <div className="flex items-center justify-between mb-4 sm:mb-6">
+        <h2 className="text-lg sm:text-2xl font-bold text-white flex items-center gap-2 sm:gap-3">
+          <div className="w-2 h-6 sm:h-8 bg-orange-500 rounded-full"></div>
+          <span className="truncate">Market Heatmap</span>
+          <span className="text-xs sm:text-sm text-gray-400 font-normal hidden sm:block">
             ({Object.keys(groupedHeatmap).length} sectors • {heatmapData.length} stocks)
           </span>
         </h2>
@@ -885,8 +885,8 @@ export default function Markets({ isVisible = true }: { isVisible?: boolean }) {
   // Show only hero skeleton while essential data loads - other sections will show loading within their boxes
 
   return (
-     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-6">
-       <div className="max-w-7xl mx-auto space-y-6">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-3 sm:p-6">
+        <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
          {/* Hero Section - Shows immediately when data is available */}
          <HeroSection
            data={overviewData}

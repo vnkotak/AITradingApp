@@ -202,7 +202,6 @@ html, body, #__next {
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
   animation: data-sweep 1.5s ease-in-out;
 }
-
 @keyframes data-sweep {
   0% {
     left: -100%;
@@ -214,5 +213,50 @@ html, body, #__next {
     left: 100%;
   }
 }
+
+/* Mobile Responsiveness Utilities */
+.mobile-container {
+  @apply px-2 sm:px-4;
+}
+
+.mobile-grid {
+  @apply grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4;
+}
+
+.mobile-text {
+  @apply text-sm sm:text-base;
+}
+
+.mobile-heading {
+  @apply text-lg sm:text-xl lg:text-2xl;
+}
+
+.mobile-padding {
+  @apply p-3 sm:p-4 lg:p-6;
+}
+
+.mobile-margin {
+  @apply m-2 sm:m-4 lg:m-6;
+}
+
+.mobile-gap {
+  @apply gap-2 sm:gap-4 lg:gap-6;
+}
+
+/* Prevent horizontal scroll on mobile */
+@media (max-width: 640px) {
+  .mobile-scroll-fix {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  /* Ensure text doesn't overflow on mobile */
+  .mobile-text-ellipsis {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 
 

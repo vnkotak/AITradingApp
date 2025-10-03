@@ -68,62 +68,74 @@ export default function Header() {
   }
 
   return (
-    <div className="w-full flex items-center justify-between">
-      {/* Logo and Title */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
-            <span className="text-white font-bold text-lg">AI</span>
+    <div className="w-full flex items-center justify-between gap-2">
+      {/* Logo and Title - Mobile Responsive */}
+      <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
+            <span className="text-white font-bold text-sm sm:text-lg">AI</span>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">AI Trading App</h1>
-            <p className="text-xs text-gray-400">Advanced Paper Trading Platform</p>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg sm:text-xl font-bold text-white truncate">AI Trading App</h1>
+            <p className="text-xs text-gray-400 truncate hidden sm:block">Advanced Paper Trading Platform</p>
           </div>
         </div>
       </div>
 
-      {/* System Status */}
-      <div className="flex items-center gap-6">
-        {/* API Status */}
-        <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(apiStatus)}`}></div>
-          <div className="text-sm">
-            <span className="text-gray-400">API:</span>
-            <span className={`ml-1 font-medium ${apiStatus ? 'text-green-400' : apiStatus === false ? 'text-red-400' : 'text-gray-500'}`}>
-              {apiStatus === null ? 'Checking...' : apiStatus ? 'Online' : 'Offline'}
-            </span>
+      {/* System Status - Mobile Responsive */}
+      <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
+        {/* Mobile: Compact Status Indicators */}
+        <div className="hidden sm:flex items-center gap-3 md:gap-6">
+          {/* API Status */}
+          <div className="flex items-center gap-1 sm:gap-2">
+            <div className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full ${getStatusColor(apiStatus)}`}></div>
+            <div className="text-xs sm:text-sm">
+              <span className="text-gray-400">API:</span>
+              <span className={`ml-1 font-medium ${apiStatus ? 'text-green-400' : apiStatus === false ? 'text-red-400' : 'text-gray-500'}`}>
+                {apiStatus === null ? '...' : apiStatus ? 'OK' : 'ERR'}
+              </span>
+            </div>
+          </div>
+
+          {/* Database Status */}
+          <div className="flex items-center gap-1 sm:gap-2">
+            <div className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full ${getStatusColor(dbStatus)}`}></div>
+            <div className="text-xs sm:text-sm">
+              <span className="text-gray-400">DB:</span>
+              <span className={`ml-1 font-medium ${dbStatus ? 'text-blue-400' : dbStatus === false ? 'text-red-400' : 'text-gray-500'}`}>
+                {dbStatus === null ? '...' : dbStatus ? 'OK' : 'ERR'}
+              </span>
+            </div>
+          </div>
+
+          {/* Market Status & Refresh */}
+          <div className="flex items-center gap-1 sm:gap-2">
+            <div className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full ${getRefreshStatusColor()}`}></div>
+            <div className="text-xs sm:text-sm">
+              <span className="text-gray-400">Market:</span>
+              <span className={`ml-1 font-medium ${marketStatus === 'CLOSED' ? 'text-gray-500' : 'text-purple-400'}`}>
+                {marketStatus === 'CLOSED' ? 'Closed' : 'Open'}
+              </span>
+              <span className="text-gray-500 ml-1 sm:ml-2">•</span>
+              <span className="text-gray-400 ml-1">Refresh:</span>
+              <span className={`ml-1 font-medium ${marketStatus === 'CLOSED' ? 'text-gray-600' : 'text-purple-400'}`}>
+                {refreshRate}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Database Status */}
-        <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(dbStatus)}`}></div>
-          <div className="text-sm">
-            <span className="text-gray-400">DB:</span>
-            <span className={`ml-1 font-medium ${dbStatus ? 'text-blue-400' : dbStatus === false ? 'text-red-400' : 'text-gray-500'}`}>
-              {dbStatus === null ? 'Checking...' : dbStatus ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
-        </div>
-
-        {/* Market Status & Refresh */}
-        <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${getRefreshStatusColor()}`}></div>
-          <div className="text-sm">
-            <span className="text-gray-400">Market:</span>
-            <span className={`ml-1 font-medium ${marketStatus === 'CLOSED' ? 'text-gray-500' : 'text-purple-400'}`}>
-              {marketStatus === 'CLOSED' ? 'Closed' : 'Open'}
-            </span>
-            <span className="text-gray-500 ml-2">•</span>
-            <span className="text-gray-400 ml-1">Refresh:</span>
-            <span className={`ml-1 font-medium ${marketStatus === 'CLOSED' ? 'text-gray-600' : 'text-purple-400'}`}>
-              {refreshRate}
-            </span>
-          </div>
+        {/* Mobile: Collapsed Status Indicators */}
+        <div className="flex sm:hidden items-center gap-1">
+          <div className={`w-2 h-2 rounded-full ${getStatusColor(apiStatus)}`} title="API Status"></div>
+          <div className={`w-2 h-2 rounded-full ${getStatusColor(dbStatus)}`} title="Database Status"></div>
+          <div className={`w-2 h-2 rounded-full ${getRefreshStatusColor()}`} title="Market Status"></div>
         </div>
 
         {/* Pause Toggle */}
-        <PauseToggle />
+        <div className="flex-shrink-0">
+          <PauseToggle />
+        </div>
       </div>
     </div>
   )

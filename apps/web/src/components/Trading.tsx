@@ -19,12 +19,12 @@ function TradingStatus() {
    }, 0)
 
    return (
-     <div className="bg-gradient-to-r from-slate-800/50 to-blue-900/30 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/50 mb-6">
-       <div className="flex items-center gap-2 mb-4">
-         <div className="w-2 h-8 bg-blue-500 rounded-full"></div>
-         <h3 className="text-xl font-bold text-white">Portfolio Status</h3>
-       </div>
-       <div className="grid grid-cols-3 gap-6">
+       <div className="bg-gradient-to-r from-slate-800/50 to-blue-900/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/50 mb-4 sm:mb-6">
+         <div className="flex items-center gap-2 mb-3 sm:mb-4">
+           <div className="w-2 h-6 sm:h-8 bg-blue-500 rounded-full"></div>
+           <h3 className="text-lg sm:text-xl font-bold text-white">Portfolio Status</h3>
+         </div>
+         <div className="grid grid-cols-3 gap-3 sm:gap-6">
          <div className="bg-white/5 rounded-xl p-4 border border-white/10">
            <div className="text-sm text-gray-300 mb-1">Available Cash</div>
            <div className="text-2xl font-bold text-white">₹{cash.toLocaleString('en-IN')}</div>
@@ -120,7 +120,7 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
 
     console.log('🎯 Initializing chart...')
     const width = containerRef.current.clientWidth || 800
-    const height = 420
+    const height = window.innerWidth < 640 ? 300 : 420
 
     console.log('📊 Chart dimensions:', { width, height })
 
@@ -403,16 +403,16 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
   }, [autoTrading, symbol, tf, API, lastSignal, placeOrder, isVisible])
 
   return (
-     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-6">
-       <div className="max-w-7xl mx-auto space-y-6">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-3 sm:p-6">
+        <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
          <TradingStatus />
 
-         <div className="grid lg:grid-cols-3 gap-6">
+         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
            {/* Trade Panel */}
-           <div className="lg:col-span-1 bg-slate-800/30 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/30">
-             <div className="flex items-center gap-2 mb-6">
-               <div className="w-2 h-8 bg-green-500 rounded-full"></div>
-               <h3 className="text-xl font-bold text-white">Trading Panel</h3>
+           <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
+             <div className="flex items-center gap-2 mb-4 sm:mb-6">
+               <div className="w-2 h-6 sm:h-8 bg-green-500 rounded-full"></div>
+               <h3 className="text-lg sm:text-xl font-bold text-white">Trading Panel</h3>
                <div className={`px-2 py-1 rounded text-xs ${apiConnected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
                  {apiConnected ? 'API Connected' : 'API Disconnected'}
                </div>
@@ -523,10 +523,10 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
            </div>
 
            {/* Chart Panel */}
-           <div className="lg:col-span-2 bg-slate-800/30 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/30">
-             <div className="flex items-center gap-2 mb-4">
-               <div className="w-2 h-8 bg-purple-500 rounded-full"></div>
-               <h3 className="text-xl font-bold text-white">Price Chart</h3>
+           <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
+             <div className="flex items-center gap-2 mb-3 sm:mb-4">
+               <div className="w-2 h-6 sm:h-8 bg-purple-500 rounded-full"></div>
+               <h3 className="text-lg sm:text-xl font-bold text-white">Price Chart</h3>
                {candles === null && (
                  <div className="flex items-center gap-1 text-purple-400 text-sm">
                    <div className="w-1 h-1 bg-purple-400 rounded-full animate-pulse"></div>
@@ -537,10 +537,10 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
              <div className="rounded-xl overflow-hidden border border-slate-600/50 relative bg-slate-900">
                <div
                  ref={containerRef}
-                 className="w-full h-[420px] min-h-[420px] relative"
+                 className="w-full h-[300px] sm:h-[420px] min-h-[300px] sm:min-h-[420px] relative"
                  style={{
-                   minHeight: '420px',
-                   height: '420px',
+                   minHeight: window.innerWidth < 640 ? '300px' : '420px',
+                   height: window.innerWidth < 640 ? '300px' : '420px',
                    backgroundColor: '#0b0f15'
                  }}
                />

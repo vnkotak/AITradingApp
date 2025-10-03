@@ -13,14 +13,14 @@ export default function History() {
   }, [trades])
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-orange-900 to-red-900 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Recent Orders */}
-        <div className="bg-slate-800/30 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/30">
-          <div className="flex items-center gap-2 mb-6">
-            <div className="w-2 h-8 bg-orange-500 rounded-full"></div>
-            <h2 className="text-2xl font-bold text-white">Recent Orders</h2>
-          </div>
+     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-orange-900 to-red-900 p-3 sm:p-6">
+       <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
+         {/* Recent Orders */}
+         <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
+           <div className="flex items-center gap-2 mb-4 sm:mb-6">
+             <div className="w-2 h-6 sm:h-8 bg-orange-500 rounded-full"></div>
+             <h2 className="text-lg sm:text-2xl font-bold text-white">Recent Orders</h2>
+           </div>
 
           {orders.length === 0 ? (
             <div className="text-center py-12">
@@ -33,7 +33,7 @@ export default function History() {
               {(orders||[]).map((o: any, index: number) => (
                 <div
                   key={o.id}
-                  className="bg-white/5 rounded-xl p-4 border border-white/10 hover:border-white/20 transition-all duration-300 hover:scale-[1.02]"
+                  className="bg-white/5 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-white/10 hover:border-white/20 transition-all duration-300 hover:scale-[1.02]"
                   style={{ animationDelay: `${index * 50}ms` }}
                 >
                   <div className="flex items-center justify-between">
@@ -76,28 +76,28 @@ export default function History() {
         </div>
 
         {/* Trading Statistics */}
-        <div className="bg-slate-800/30 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/30">
-          <div className="flex items-center gap-2 mb-6">
-            <div className="w-2 h-8 bg-blue-500 rounded-full"></div>
-            <h2 className="text-2xl font-bold text-white">Trading Statistics</h2>
-          </div>
+         <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
+           <div className="flex items-center gap-2 mb-4 sm:mb-6">
+             <div className="w-2 h-6 sm:h-8 bg-blue-500 rounded-full"></div>
+             <h2 className="text-lg sm:text-2xl font-bold text-white">Trading Statistics</h2>
+           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-              <div className="text-sm text-gray-400 mb-2">Total Orders</div>
-              <div className="text-3xl font-bold text-white">{orders.length}</div>
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
+            <div className="bg-white/5 rounded-lg sm:rounded-xl p-3 sm:p-6 border border-white/10">
+              <div className="text-xs sm:text-sm text-gray-400 mb-2">Total Orders</div>
+              <div className="text-2xl sm:text-3xl font-bold text-white">{orders.length}</div>
               <div className="text-xs text-gray-400 mt-1">All time</div>
             </div>
 
-            <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-              <div className="text-sm text-gray-400 mb-2">Completed Trades</div>
-              <div className="text-3xl font-bold text-green-400">{trades.length}</div>
+            <div className="bg-white/5 rounded-lg sm:rounded-xl p-3 sm:p-6 border border-white/10">
+              <div className="text-xs sm:text-sm text-gray-400 mb-2">Completed Trades</div>
+              <div className="text-2xl sm:text-3xl font-bold text-green-400">{trades.length}</div>
               <div className="text-xs text-gray-400 mt-1">Successful executions</div>
             </div>
 
-            <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-              <div className="text-sm text-gray-400 mb-2">Est. Win Rate</div>
-              <div className="text-3xl font-bold text-blue-400">{winRate}%</div>
+            <div className="bg-white/5 rounded-lg sm:rounded-xl p-3 sm:p-6 border border-white/10">
+              <div className="text-xs sm:text-sm text-gray-400 mb-2">Est. Win Rate</div>
+              <div className="text-2xl sm:text-3xl font-bold text-blue-400">{winRate}%</div>
               <div className="text-xs text-gray-400 mt-1">Based on closed trades</div>
             </div>
           </div>
