@@ -51,16 +51,18 @@ def fetch_yahoo_candles(
     # Fix: Use period1 and period2 with appropriate limits based on timeframe
     now = int(datetime.now(timezone.utc).timestamp())
 
-    # Yahoo Finance limitations:
-    # - 1m, 5m, 15m: max 60 days historical data
-    # - 1h: max 730 days
-    # - 1d: no limit
+    # Yahoo Finance limitations for Indian stocks:
+    # - 1m: NOT AVAILABLE for NSE/BSE stocks (only US stocks)
+    # - 5m: Available, max 60 days
+    # - 15m: Available, max 60 days
+    # - 1h: Available, max 730 days
+    # - 1d: Available, max 2 years
     max_days = {
-        '1m': 60,
+        '1m': 7,      # Fallback to synthetic for Indian stocks
         '5m': 60,
         '15m': 60,
         '1h': 730,
-        '1d': 365*2  # 2 years
+        '1d': 365*2   # 2 years
     }
 
     actual_lookback = min(lookback_days, max_days.get(timeframe, 60))

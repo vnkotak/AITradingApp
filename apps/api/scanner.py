@@ -50,7 +50,7 @@ def scan_once(mode: str, force: bool = False) -> dict:
     print("Mode ", mode)
     run = sb.table("strategy_runs").insert({"mode": mode}).execute().data[0]
     run_id = run["id"]
-    symbols = sb.table("symbols").select("id,ticker,exchange").eq("is_active", True).limit(50).execute().data
+    symbols = sb.table("symbols").select("id,ticker,exchange").eq("is_active", True).limit(250).execute().data
     total_signals = 0
     for s in symbols:
         sid = s["id"]; ticker = s["ticker"]; exch = s["exchange"]
@@ -101,8 +101,34 @@ def scan_once(mode: str, force: bool = False) -> dict:
                 "confidence": conf,
                 "rationale": {"rationale": sig.rationale, "scoring": rationale},
             })
-        if rows:
-            sb.table("signals").insert(rows).execute()
+        # IMPROVED: Filter for high-quality signals only
+        quality_signals = []
+        for sig in raw_signals:
+            # Only keep signals with improved logic and high confidence
+            if (sig.rationale.get("improved", False) and
+                sig.confidence > 0.6 and
+                sig.strategy in ["trend_follow", "mean_reversion", "momentum"]):
+                quality_signals.append(sig)
+
+        if quality_signals:
+            # Convert to database format
+            rows = []
+            for sig in quality_signals:
+                rows.append({
+                    "symbol_id": sid,
+                    "timeframe": mode,
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "strategy": sig.strategy,
+                    "action": sig.action,
+                    "entry": sig.entry,
+                    "stop": sig.stop,
+                    "target": sig.target,
+                    "confidence": sig.confidence,
+                    "rationale": {"rationale": sig.rationale, "quality_filtered": True},
+                })
+
+            if rows:
+                sb.table("signals").insert(rows).execute()
         # Ensemble decision using latest model weights
         weights = get_latest_strategy_weights(defaults={"trend_follow":1,"mean_reversion":1,"momentum":1})
         ens = ensemble(scored, strategy_weights=weights)

@@ -2,14 +2,61 @@ name: Scan 15m
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    # Market hours: 9:15 AM - 3:30 PM IST = 3:45 AM - 10:00 AM UTC (Monday-Friday)
+    - cron: '45 3 * * 1-5'     # 3:45 UTC (Mon-Fri)
+    - cron: '*/15 4-9 * * 1-5' # Every 15 min from 4:00-9:59 UTC (Mon-Fri)
+    - cron: '0 10 * * 1-5'     # 10:00 UTC (Mon-Fri) - market close
   workflow_dispatch:
 
 jobs:
   run-scan:
     runs-on: ubuntu-latest
     steps:
+      - name: Check market hours and holidays
+        run: |
+          # Get current UTC time
+          UTC_HOUR=$(date -u +%H)
+          UTC_MIN=$(date -u +%M)
+          DAY_OF_WEEK=$(date -u +%u)  # 1=Monday, 7=Sunday
+
+          # Convert to IST (UTC + 5:30)
+          IST_HOUR=$(( (UTC_HOUR + 5) % 24 ))
+          IST_MIN=$(( UTC_MIN + 30 ))
+
+          # Handle minute overflow
+          if [ $IST_MIN -ge 60 ]; then
+            IST_MIN=$(( IST_MIN - 60 ))
+            IST_HOUR=$(( (IST_HOUR + 1) % 24 ))
+          fi
+
+          echo "Current UTC: $(date -u +'%Y-%m-%d %H:%M:%S')"
+          echo "Current IST: $(printf "%02d:%02d" $IST_HOUR $IST_MIN)"
+          echo "Day of week: $DAY_OF_WEEK (1=Monday, 7=Sunday)"
+
+          # Check if it's a weekday (1-5 = Monday-Friday)
+          if [ "$DAY_OF_WEEK" -lt 1 ] || [ "$DAY_OF_WEEK" -gt 5 ]; then
+            echo "⚠️ Weekend detected. Skipping scan."
+            exit 0
+          fi
+
+          # Check if within market hours (IST 9:15 AM - 3:30 PM)
+          if [ "$IST_HOUR" -lt 9 ] || [ "$IST_HOUR" -gt 15 ]; then
+            if [ "$IST_HOUR" -eq 9 ] && [ "$IST_MIN" -lt 15 ]; then
+              echo "⚠️ Before market opens (9:15 AM IST). Skipping scan."
+              exit 0
+            fi
+            if [ "$IST_HOUR" -eq 15 ] && [ "$IST_MIN" -gt 30 ]; then
+              echo "⚠️ After market closes (3:30 PM IST). Skipping scan."
+              exit 0
+            fi
+            echo "⚠️ Outside market hours. Skipping scan."
+            exit 0
+          fi
+
+          echo "✅ Market is open. Proceeding with scan."
+
       - name: Call scanner 15m
+        if: success() # Only run if market hours check passed
         run: |
           curl -sS -X POST "https://aitradingapp.onrender.com/scanner/run?mode=15m"
 
