@@ -2,52 +2,69 @@
 
 import { useEffect, useState } from 'react'
 import axios from 'axios'
+import { useTheme } from './ThemeProvider'
 
 const API = process.env.NEXT_PUBLIC_API_BASE
 
-// ===== MODERN HERO SECTION =====
-function HeroSection({ data, isUpdating, marketStatus, onManualRefresh, manualRefresh, clientMarketStatus }: {
+// ===== ENHANCED WELCOME HERO SECTION =====
+function WelcomeHeroSection({ data, isUpdating, marketStatus, clientMarketStatus, onRetry }: {
   data: any;
   isUpdating: boolean;
   marketStatus?: string;
-  onManualRefresh?: () => void;
-  manualRefresh?: boolean;
   clientMarketStatus?: string;
+  onRetry?: () => void;
 }) {
+  const { theme, toggleTheme } = useTheme()
   const [time, setTime] = useState(() => new Date())
-  const [isClient, setIsClient] = useState(false)
+  const [greeting, setGreeting] = useState('')
 
   useEffect(() => {
-    setIsClient(true)
     const timer = setInterval(() => setTime(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
 
-  // Show hero section immediately with available data (even if loading)
+  useEffect(() => {
+    const hour = time.getHours()
+    if (hour < 12) setGreeting('Good morning')
+    else if (hour < 17) setGreeting('Good afternoon')
+    else setGreeting('Good evening')
+  }, [time])
 
   return (
-     <div className={`relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 rounded-2xl sm:rounded-3xl p-4 sm:p-8 mb-6 sm:mb-8 transition-all duration-500 ${isUpdating ? 'ring-2 ring-blue-500/30 shadow-lg shadow-blue-500/10' : ''}`}>
+    <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 dark:from-gray-900 dark:via-blue-900 dark:to-indigo-900 rounded-2xl sm:rounded-3xl p-4 sm:p-8 mb-6 sm:mb-8 transition-all duration-500">
       {/* Animated background elements */}
       <div className="absolute inset-0">
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-0 left-0 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
       </div>
 
-      {/* Update indicator */}
-      {isUpdating && (
-        <div className="absolute top-4 right-4 flex items-center gap-2 text-blue-400 text-sm">
-          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
-          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce delay-100"></div>
-          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce delay-200"></div>
-          <span className="ml-2">Updating...</span>
-        </div>
-      )}
+      {/* Theme Toggle & Update Indicator */}
+      <div className="absolute top-4 right-4 flex items-center gap-3">
+        <button
+          onClick={toggleTheme}
+          className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors duration-200"
+          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+        >
+          {theme === 'dark' ? '☀️' : '🌙'}
+        </button>
+        {isUpdating && (
+          <div className="flex items-center gap-2 text-blue-400 text-sm">
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce delay-100"></div>
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce delay-200"></div>
+            <span>Updating...</span>
+          </div>
+        )}
+      </div>
 
-      {/* Refresh rate indicator */}
-      <div className="absolute top-4 left-4 text-xs text-gray-400">
-        {clientMarketStatus === 'OPEN' ? 'Updates: 30s' :
-         clientMarketStatus === 'PRE_OPEN' ? 'Updates: 2m' :
-         'Loading...'}
+      {/* Welcome Message */}
+      <div className="relative z-10 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
+          {greeting}, Trader! 👋
+        </h1>
+        <p className="text-gray-300 text-sm sm:text-base">
+          Welcome to your AI-powered trading dashboard. Stay ahead with real-time insights and automated signals.
+        </p>
       </div>
 
       <div className="relative z-10 grid lg:grid-cols-3 gap-8 items-center">
@@ -70,29 +87,20 @@ function HeroSection({ data, isUpdating, marketStatus, onManualRefresh, manualRe
             </span>
           </div>
           <div className="text-4xl font-bold text-white mb-2 transition-all duration-300">
-            {data?.market_time || (isClient ? time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '00:00')}
+            {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}
           </div>
           <div className="text-gray-300">
-            IST • {isClient ? (() => {
-              const date = time.toLocaleDateString('en-IN', {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric'
-              });
-              // Convert "Monday 29 September 2025" to "Monday, 29 September 2025"
-              return date.replace(/(\w+)\s+(\d+)\s+(\w+)\s+(\d+)/, '$1, $2 $3 $4');
-            })() : 'Loading...'}
+            IST • {time.toLocaleDateString('en-IN', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric'
+            }).replace(/(\w+)\s+(\d+)\s+(\w+)\s+(\d+)/, '$1, $2 $3 $4')}
           </div>
-          {clientMarketStatus !== 'OPEN' && (
-            <div className="text-sm text-gray-400 mt-2">
-              {clientMarketStatus === 'PRE_OPEN' ? 'Opens at 9:15 AM' : 'Closed • Mon-Fri 9:15 AM - 3:30 PM'}
-            </div>
-          )}
         </div>
 
         {/* Portfolio Overview */}
-        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 transition-all duration-500 hover:bg-white/15">
+        <div className="bg-white/10 dark:bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 transition-all duration-500 hover:bg-white/15">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse"></div>
             Portfolio Overview
@@ -101,7 +109,7 @@ function HeroSection({ data, isUpdating, marketStatus, onManualRefresh, manualRe
             <div>
               <div className="text-sm text-gray-300 mb-1">Total Value</div>
               <div className="text-2xl font-bold text-white">
-                ₹<AnimatedNumber value={data?.portfolio_value || 0} />
+                ₹{data?.portfolio_value ? <AnimatedNumber value={data.portfolio_value} /> : '0'}
               </div>
             </div>
             <div>
@@ -109,13 +117,13 @@ function HeroSection({ data, isUpdating, marketStatus, onManualRefresh, manualRe
               <div className={`text-2xl font-bold transition-colors duration-500 ${
                 (data?.portfolio_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'
               }`}>
-                <AnimatedNumber value={data?.portfolio_pnl || 0} />
+                {data?.portfolio_pnl ? <AnimatedNumber value={data.portfolio_pnl} /> : '0'}
               </div>
             </div>
             <div>
               <div className="text-sm text-gray-300 mb-1">Cash Available</div>
               <div className="text-xl font-semibold text-gray-200">
-                ₹<AnimatedNumber value={data?.cash_balance || 0} />
+                ₹{data?.cash_balance ? <AnimatedNumber value={data.cash_balance} /> : '0'}
               </div>
             </div>
             <div>
@@ -127,7 +135,7 @@ function HeroSection({ data, isUpdating, marketStatus, onManualRefresh, manualRe
           </div>
         </div>
 
-        {/* Market Sentiment */}
+        {/* Market Sentiment & Key Metrics */}
         <div className="text-center lg:text-right">
           <div className="inline-flex items-center gap-2 mb-4">
             <span className="text-sm text-gray-300">Market Sentiment:</span>
@@ -140,19 +148,22 @@ function HeroSection({ data, isUpdating, marketStatus, onManualRefresh, manualRe
             </div>
           </div>
           <div className="text-3xl font-bold text-white mb-2 transition-all duration-500">
-            <AnimatedNumber value={data?.sentiment_score || 0} />%
+            {data?.sentiment_score ? <AnimatedNumber value={data.sentiment_score} /> : '0'}%
           </div>
-          <div className="text-gray-300 text-sm">
+          <div className="text-gray-300 text-sm mb-3">
             AI + Market Analysis
-            {data?.sentiment_components && (
-              <div className="text-xs text-gray-400 mt-1">
-                AI: {data.sentiment_components.ai_sentiment > 0 ? '+' : ''}{data.sentiment_components.ai_sentiment}% •
-                Market: {data.sentiment_components.market_sentiment > 0 ? '+' : ''}{data.sentiment_components.market_sentiment}%
-                <div className="text-xs text-gray-500 mt-1">
-                  💡 60% Market Data + 40% AI Signals
-                </div>
-              </div>
-            )}
+          </div>
+
+          {/* Key Market Indicators */}
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="bg-white/5 rounded-lg p-2">
+              <div className="text-gray-400">VIX</div>
+              <div className="font-semibold text-white">{data?.vix_index || '--'}</div>
+            </div>
+            <div className="bg-white/5 rounded-lg p-2">
+              <div className="text-gray-400">Volume</div>
+              <div className="font-semibold text-white">{data?.market_volume ? `${(data.market_volume / 1000000).toFixed(1)}M` : '--'}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -730,72 +741,74 @@ export default function Markets({ isVisible = true }: { isVisible?: boolean }) {
   }, [])
 
   // Progressive loading - load essential data first
+  const loadMarketStatus = async () => {
+    if (!API || !isVisible) return
+
+    try {
+      setLoading(true)
+      setError(null)
+
+      // Load market status FIRST (fastest, most critical)
+      const overviewRes = await axios.get(`${API}/home/overview`)
+
+      const data = overviewRes.data
+      setOverviewData(data)
+      setLastUpdate(new Date())
+      setLoading(false)
+
+      // Cache the data for persistence
+      marketsStateCache.overviewData = data
+      marketsStateCache.lastUpdate = new Date()
+
+      // Set indices as loaded (they come with overview data)
+      if (data.indices) {
+        setIndicesLoaded(true)
+      }
+
+      // Set top movers as loaded (they come with overview data)
+      if (data.top_gainers || data.top_losers) {
+        setMoversLoaded(true)
+      }
+
+      // Load signals SECOND (after market status and indices/movers)
+      setSignalsLoading(true)
+      const signalsRes = await axios.get(`${API}/home/recent-signals?limit=6`)
+      const signals = signalsRes.data || []
+      setRecentSignals(signals)
+      setSignalsLoading(false)
+      marketsStateCache.recentSignals = signals
+
+      // Load heatmap LAST (least critical) - delay by 2 seconds to ensure proper sequence
+      setTimeout(() => {
+        setHeatmapShouldLoad(true)
+        setHeatmapLoading(true)
+      }, 2000)
+
+    } catch (err: any) {
+      console.error('Failed to load market data:', err)
+      setError(err.message || 'Failed to load market data')
+      setLoading(false)
+      setSignalsLoading(false)
+      setHeatmapLoading(false)
+      setHeatmapShouldLoad(false)
+    }
+  }
+
   useEffect(() => {
     let mounted = true
 
-    const loadMarketStatus = async () => {
-      if (!API || !mounted || !isVisible) return
-
-      try {
-        // Load market status FIRST (fastest, most critical)
-        const overviewRes = await axios.get(`${API}/home/overview`)
-        if (!mounted || !isVisible) return
-
-        const data = overviewRes.data
-        setOverviewData(data)
-        setLastUpdate(new Date())
-
-        // Cache the data for persistence
-        marketsStateCache.overviewData = data
-        marketsStateCache.lastUpdate = new Date()
-
-        // Set indices as loaded (they come with overview data)
-        if (data.indices) {
-          setIndicesLoaded(true)
-        }
-
-        // Set top movers as loaded (they come with overview data)
-        if (data.top_gainers || data.top_losers) {
-          setMoversLoaded(true)
-        }
-
-        // Load signals SECOND (after market status and indices/movers)
-        setSignalsLoading(true)
-        const signalsRes = await axios.get(`${API}/home/recent-signals?limit=6`)
-        if (mounted) {
-          const signals = signalsRes.data || []
-          setRecentSignals(signals)
-          setSignalsLoading(false)
-          marketsStateCache.recentSignals = signals
-        }
-
-        // Load heatmap LAST (least critical) - delay by 2 seconds to ensure proper sequence
-        setTimeout(() => {
-          if (mounted) {
-            setHeatmapShouldLoad(true)
-            setHeatmapLoading(true)
-          }
-        }, 2000)
-
-      } catch (err: any) {
-        console.error('Failed to load market data:', err)
-        if (mounted) {
-          setSignalsLoading(false)
-          setHeatmapLoading(false)
-          setHeatmapShouldLoad(false)
-        }
-      }
+    // Start loading market data immediately with optimized sequence
+    if (isVisible) {
+      loadMarketStatus()
     }
 
-    // Start loading market data immediately with optimized sequence
-    loadMarketStatus()
-
     // Handle visibility changes - if we have cached data and become visible, use it
-    if (!mounted) return
     if (isVisible && marketsStateCache.overviewData && !overviewData) {
       setOverviewData(marketsStateCache.overviewData)
       setLastUpdate(marketsStateCache.lastUpdate)
       setLoading(false)
+      setIndicesLoaded(true)
+      setMoversLoaded(true)
     }
 
     return () => {
@@ -813,9 +826,9 @@ export default function Markets({ isVisible = true }: { isVisible?: boolean }) {
     const getRefreshInterval = (marketStatus: string) => {
       switch (marketStatus) {
         case 'OPEN':
-          return 120000 // 2 minutes when market is open (reduced from 30s)
+          return 60000 // 60 seconds when market is open
         case 'PRE_OPEN':
-          return 300000 // 5 minutes during pre-market (reduced from 2min)
+          return 300000 // 5 minutes during pre-market
         case 'CLOSED':
         default:
           return null // No automatic refresh when closed
@@ -887,12 +900,17 @@ export default function Markets({ isVisible = true }: { isVisible?: boolean }) {
   return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-3 sm:p-6">
         <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
-         {/* Hero Section - Shows immediately when data is available */}
-         <HeroSection
+         {/* Welcome Hero Section - Shows immediately with enhanced features */}
+         <WelcomeHeroSection
            data={overviewData}
            isUpdating={isUpdating}
            marketStatus={overviewData?.market_status}
            clientMarketStatus={currentMarketStatus}
+           onRetry={() => {
+             setLoading(true)
+             setError(null)
+             loadMarketStatus()
+           }}
          />
 
          {/* Market Indices - Shows with loading state in correct sequence */}

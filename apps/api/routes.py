@@ -124,7 +124,8 @@ def get_candles(
     exchange: Literal['NSE', 'BSE'] = 'NSE',
     tf: str = '1m',
     limit: int = 500,
-    fresh: bool = False  # Add parameter to force fresh data fetch
+    fresh: bool = False,  # Legacy parameter - kept for compatibility
+    auto_fetch: bool = False  # New smart auto-fetch parameter
 ):
     sb = get_client()
     if not sb:
@@ -148,38 +149,48 @@ def get_candles(
 
         sym = res.data[0]
 
-        # If fresh data is requested, fetch from Yahoo Finance first
-        if fresh:
-            print(f"📊 Fetching fresh {tf} data from Yahoo Finance for {ticker}")
+        # Smart auto-fetch logic: only fetch fresh data if it's stale
+        if auto_fetch or fresh:
             try:
-                # Fetch fresh data from Yahoo Finance
-                fresh_candles = fetch_yahoo_candles(ticker, exchange, tf, lookback_days=2)
+                # Check if we need fresh data (only if data is > 2 hours old)
+                latest_candle = sb.table('candles').select('ts').eq('symbol_id', sym['id']).eq('timeframe', tf).order('ts', desc=True).limit(1).execute().data
 
-                if fresh_candles and len(fresh_candles) > 0:
-                    # Filter out zero-value candles before storing
-                    valid_candles = [c for c in fresh_candles if c.get("open", 0) > 0 and c.get("close", 0) > 0]
-                    zero_candles = len(fresh_candles) - len(valid_candles)
+                needs_fresh = True
+                if latest_candle:
+                    from datetime import datetime, timezone
+                    latest_ts = datetime.fromisoformat(latest_candle[0]['ts'].replace('Z', '+00:00'))
+                    hours_old = (datetime.now(timezone.utc) - latest_ts).total_seconds() / 3600
+                    needs_fresh = hours_old > 2  # Only fetch if > 2 hours old
 
-                    if zero_candles > 0:
-                        print(f"⚠️ Filtered out {zero_candles} zero-value candles from Yahoo data")
+                if needs_fresh:
+                    # Fetch fresh data from Yahoo Finance
+                    fresh_candles = fetch_yahoo_candles(ticker, exchange, tf, lookback_days=2)
 
-                    # Store only valid candles in database
-                    rows = [{
-                        "symbol_id": sym["id"],
-                        "timeframe": tf,
-                        "ts": c["ts"],
-                        "open": c["open"],
-                        "high": c["high"],
-                        "low": c["low"],
-                        "close": c["close"],
-                        "volume": c.get("volume"),
-                    } for c in valid_candles]
+                    if fresh_candles and len(fresh_candles) > 0:
+                        # Filter out zero-value candles before storing
+                        valid_candles = [c for c in fresh_candles if c.get("open", 0) > 0 and c.get("close", 0) > 0]
+                        zero_candles = len(fresh_candles) - len(valid_candles)
 
-                    if rows:
-                        sb.table("candles").upsert(rows, on_conflict="symbol_id,timeframe,ts").execute()
-                        print(f"✅ Stored {len(rows)} valid {tf} candles for {ticker} (filtered {zero_candles} zero values)")
+                        if zero_candles > 0:
+                            print(f"⚠️ Filtered out {zero_candles} zero-value candles from Yahoo data")
+
+                        # Store only valid candles in database
+                        rows = [{
+                            "symbol_id": sym["id"],
+                            "timeframe": tf,
+                            "ts": c["ts"],
+                            "open": c["open"],
+                            "high": c["high"],
+                            "low": c["low"],
+                            "close": c["close"],
+                            "volume": c.get("volume"),
+                        } for c in valid_candles]
+
+                        if rows:
+                            sb.table("candles").upsert(rows, on_conflict="symbol_id,timeframe,ts").execute()
             except Exception as e:
-                print(f"⚠️ Failed to fetch fresh data from Yahoo: {e}")
+                # Don't fail the request if auto-fetch fails - just log and continue
+                print(f"⚠️ Auto-fetch failed for {ticker} {tf}: {e}")
 
         # Fetch candles from database
         candles_res = (
@@ -197,7 +208,6 @@ def get_candles(
     except HTTPException:
         raise
     except Exception as e:
-        print("ERROR in get_candles:", e)
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 # Symbols sync endpoint removed - requires manual symbol management through database
@@ -332,8 +342,18 @@ def risk_limits():
 
 @router.get("/risk/size")
 def risk_size(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE', price: float = 0.0, atr: float | None = None, sector: str | None = None):
-    qty = suggest_position_size(ticker, exchange, price, atr, sector)
-    return {"qty": qty}
+    print(f"📊 [RISK_SIZE] Request for {ticker}.{exchange}, price={price}")
+    start_time = time.time()
+
+    try:
+        qty = suggest_position_size(ticker, exchange, price, atr, sector)
+        end_time = time.time()
+        print(f"✅ [RISK_SIZE] Success for {ticker}.{exchange}: qty={qty}, duration={end_time-start_time:.2f}s")
+        return {"qty": qty}
+    except Exception as e:
+        end_time = time.time()
+        print(f"❌ [RISK_SIZE] Error for {ticker}.{exchange}: {e}, duration={end_time-start_time:.2f}s")
+        raise HTTPException(status_code=500, detail=f"Risk calculation error: {str(e)}")
 
 
 @router.post("/risk/apply_trailing")

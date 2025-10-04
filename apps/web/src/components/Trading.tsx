@@ -46,15 +46,37 @@ const API = process.env.NEXT_PUBLIC_API_BASE
 
 
 export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
-    const [symbol, setSymbol] = useState({ ticker: 'HDFCBANK', exchange: 'NSE' as 'NSE'|'BSE' })
-    const [availableSymbols, setAvailableSymbols] = useState<any[]>([])
-    const [symbolsLoading, setSymbolsLoading] = useState(false)
-    const [apiConnected, setApiConnected] = useState<boolean>(false)
-    const [tf, setTf] = useState<Timeframe>('1m')
-    const [candles, setCandles] = useState<Candle[]|null>(null)
+      const [symbol, setSymbol] = useState({ ticker: 'HDFCBANK', exchange: 'NSE' as 'NSE'|'BSE' })
+      const [availableSymbols, setAvailableSymbols] = useState<any[]>([])
+      const [symbolsLoading, setSymbolsLoading] = useState(true) // Start as loading
+      const [apiConnected, setApiConnected] = useState<boolean>(false)
+      const [tf, setTf] = useState<Timeframe>('1m')
+      const [candles, setCandles] = useState<Candle[]|null>(null)
   
-      // Check API connectivity on component mount (more resilient)
+      // Load cached symbols immediately on mount
       useEffect(() => {
+        const cachedSymbols = (window as any).__trading_symbols__
+        const cacheTime = (window as any).__trading_symbols_time__
+        const now = Date.now()
+
+        if (cachedSymbols && cacheTime && (now - cacheTime) < 600000) { // 10 minutes
+          setAvailableSymbols(cachedSymbols)
+          setSymbolsLoading(false)
+
+          // If we have cached symbols and current symbol is default, switch to first cached symbol
+          if (cachedSymbols.length > 0 && symbol.ticker === 'HDFCBANK') {
+            const firstSymbol = cachedSymbols[0]
+            setSymbol({ ticker: firstSymbol.ticker, exchange: firstSymbol.exchange })
+          }
+        } else {
+          setSymbolsLoading(false) // No cache, but not loading yet
+        }
+      }, []) // Run only once on mount
+
+      // Check API connectivity only when component is visible
+      useEffect(() => {
+        if (!isVisible) return
+
         const checkApiConnection = async () => {
           if (!API) {
             setApiConnected(false)
@@ -62,76 +84,89 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
           }
 
           try {
-            // Use direct health check instead of getMarketAdapter to avoid cascading failures
-            const response = await axios.get(`${API}/health`, { timeout: 3000 })
+            const response = await axios.get(`${API}/health`, {
+              timeout: 3000,
+              headers: { 'Content-Type': 'application/json' }
+            })
+
             setApiConnected(response.data?.status === 'ok')
-            console.log('✅ API server is running')
           } catch (error) {
             setApiConnected(false)
-            const errorMessage = error instanceof Error ? error.message : String(error)
-            console.warn('⚠️ API server health check failed:', errorMessage)
-
-            // Additional debugging for connection issues
-            if (errorMessage.includes('NetworkError') || errorMessage.includes('fetch')) {
-              console.error('🔍 Network error detected - checking if API server is running on localhost:8000')
-              console.error('💡 Try running: cd apps/api && python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload')
-            }
           }
         }
 
         checkApiConnection()
 
-        // Check connection every 30 seconds (more frequent but still reasonable)
-        const interval = setInterval(checkApiConnection, 30000)
+        // Check connection every 2 minutes (less frequent)
+        const interval = setInterval(checkApiConnection, 120000)
 
         return () => clearInterval(interval)
-      }, [API])
+      }, [API, isVisible])
   
-      // Load available symbols on component mount (more resilient)
+      // Load available symbols only when component is visible and we don't have them cached
       useEffect(() => {
-        if (!API) return
+        if (!isVisible || !API) return
+
+        // Check if we have recent symbols cached (within 10 minutes)
+        const cachedSymbols = (window as any).__trading_symbols__
+        const cacheTime = (window as any).__trading_symbols_time__
+        const now = Date.now()
+
+        if (cachedSymbols && cacheTime && (now - cacheTime) < 600000) { // 10 minutes
+          setAvailableSymbols(cachedSymbols)
+          setSymbolsLoading(false)
+          return
+        }
 
         const loadSymbols = async () => {
-          setSymbolsLoading(true)
-          try {
-            console.log('🔄 Loading symbols from API...')
-            const response = await axios.get(`${API}/symbols?active=true`, { timeout: 5000 })
-            const symbols = response.data || []
+          if (symbolsLoading) return // Prevent concurrent loads
 
-            console.log('✅ Available symbols loaded:', symbols.length, 'symbols')
+          setSymbolsLoading(true)
+
+          try {
+            const response = await apiCallWithRetry(() =>
+              axios.get(`${API}/symbols?active=true`, {
+                timeout: 5000,
+                headers: { 'Content-Type': 'application/json' }
+              })
+            )
+
+            const symbols = response.data || []
             setAvailableSymbols(symbols)
 
-            // If current symbol is not in the available symbols, switch to first available
-            if (symbols.length > 0 && !symbols.find((s: any) => s.ticker === symbol.ticker && s.exchange === symbol.exchange)) {
-              setSymbol({ ticker: symbols[0].ticker, exchange: symbols[0].exchange })
-            }
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error)
-            console.warn('⚠️ Failed to load symbols:', errorMessage)
+            // Cache the symbols globally for this session
+            ;(window as any).__trading_symbols__ = symbols
+            ;(window as any).__trading_symbols_time__ = now
 
-            // Show helpful error message in console for debugging
-            if (errorMessage.includes('NetworkError') || errorMessage.includes('fetch')) {
-              console.error('🔍 Symbols endpoint failed - checking if API server is accessible')
-              console.error('💡 Ensure API server is running: cd apps/api && python -m uvicorn main:app --host 0.0.0.0 --port 8000')
+            // If we have symbols and current symbol is the default, switch to first available
+            if (symbols.length > 0 && symbol.ticker === 'HDFCBANK') {
+              const firstSymbol = symbols[0]
+              setSymbol({ ticker: firstSymbol.ticker, exchange: firstSymbol.exchange })
             }
+
+          } catch (error) {
+            console.error('Failed to load symbols:', error instanceof Error ? error.message : String(error))
           } finally {
             setSymbolsLoading(false)
           }
         }
 
-        // Load symbols immediately
         loadSymbols()
 
-        // Retry loading symbols every 30 seconds if we don't have any
-        const retryInterval = setInterval(() => {
-          if (availableSymbols.length === 0 && !symbolsLoading) {
-            console.log('🔄 Retrying symbols load...')
-            loadSymbols()
-          }
-        }, 30000)
+        // Only retry once after 30 seconds if we still have no symbols
+        let retryTimeout: any = null
+        if (availableSymbols.length === 0) {
+          retryTimeout = setTimeout(() => {
+            if (availableSymbols.length === 0 && isVisible && !symbolsLoading) {
+              loadSymbols()
+            }
+          }, 30000)
+        }
 
-        return () => clearInterval(retryInterval)
-      }, [API, symbol])
+        return () => {
+          if (retryTimeout) clearTimeout(retryTimeout)
+        }
+      }, [isVisible, API]) // Minimal dependencies to prevent unnecessary reloads
    const [autoTrading, setAutoTrading] = useState(false)
    const [lastSignal, setLastSignal] = useState<any>(null)
    const [forceRefresh, setForceRefresh] = useState(0) // Force refresh trigger
@@ -143,51 +178,40 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
    const placeOrder = useTradingStore(s => s.placeOrder)
    const markPrice = useTradingStore(s => s.markPrice)
 
-   // Fetch suggested quantity when symbol changes (more resilient)
+   // Calculate suggested quantity locally when candles are available
    useEffect(() => {
-       const fetchSuggestedQuantity = async () => {
-           if (!API) return
+       if (!isVisible || !candles || candles.length === 0) return
 
-           try {
-               // Get current price from the candles data if available
-               let currentPrice = 1000 // Default fallback
+       const currentPrice = candles[candles.length - 1].close
+       if (!currentPrice || currentPrice <= 0) return
 
-               if (candles && candles.length > 0) {
-                   currentPrice = candles[candles.length - 1].close
-               }
+       // Simple calculation: target ₹10,000 trade value
+       const targetValue = 10000
+       let suggestedQty = targetValue / currentPrice
 
-               const response = await axios.get(
-                   `${API}/risk/size?ticker=${symbol.ticker}&exchange=${symbol.exchange}&price=${currentPrice}`,
-                   { timeout: 5000 }
-               )
-               const suggested = Math.max(1, Math.floor(response.data.qty))
-               setSuggestedQty(suggested)
-               setQuantity(suggested) // Auto-fill with suggested quantity
-           } catch (error) {
-               console.warn('⚠️ Failed to fetch suggested quantity (using fallback):', error instanceof Error ? error.message : String(error))
-               setSuggestedQty(10) // Fallback to 10
-               setQuantity(10)
-           }
+       // Round to reasonable precision
+       if (suggestedQty >= 100) {
+           suggestedQty = Math.round(suggestedQty)
+       } else if (suggestedQty >= 10) {
+           suggestedQty = Math.round(suggestedQty * 10) / 10
+       } else if (suggestedQty >= 1) {
+           suggestedQty = Math.round(suggestedQty * 100) / 100
+       } else {
+           suggestedQty = Math.round(suggestedQty * 10000) / 10000
        }
 
-       // Always try to fetch suggested quantity, regardless of connection status
-       fetchSuggestedQuantity()
-   }, [symbol, API, candles])
+       const finalQty = Math.max(1, Math.floor(suggestedQty))
+       setSuggestedQty(finalQty)
+       setQuantity(finalQty)
+   }, [candles, isVisible])
 
   useEffect(() => {
-    if (!containerRef.current) {
-      console.log('Chart container not available')
-      return
-    }
-
-    console.log('🎯 Initializing chart...')
+    if (!containerRef.current || !isVisible) return
 
     // Get container dimensions
     const rect = containerRef.current.getBoundingClientRect()
     const width = Math.max(100, rect.width)
     const height = Math.max(100, rect.height)
-
-    console.log('📊 Chart container dimensions:', { width, height })
 
     const chart = createChart(containerRef.current, {
       width: width,
@@ -242,21 +266,12 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
     })
     seriesRef.current = series
 
-    console.log('✅ Chart and series created successfully')
-
     const handleResize = () => {
       if (!containerRef.current || !chart) return
 
       const rect = containerRef.current.getBoundingClientRect()
       const newWidth = Math.max(100, rect.width)
       const newHeight = Math.max(100, rect.height)
-
-      console.log('🔄 Resizing chart:', {
-        containerWidth: rect.width,
-        containerHeight: rect.height,
-        chartWidth: newWidth,
-        chartHeight: newHeight
-      })
 
       chart.applyOptions({
         width: newWidth,
@@ -276,124 +291,90 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
     window.addEventListener('resize', handleResize)
 
     return () => {
-      console.log('🧹 Cleaning up chart')
       window.removeEventListener('resize', handleResize)
       resizeObserver.disconnect()
       chart.remove()
       seriesRef.current = null
       chartRef.current = null
     }
-  }, [])
+  }, [isVisible])
 
-  // Monitor container dimensions
-  useEffect(() => {
-    const checkDimensions = () => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect()
-        console.log('Container dimensions:', {
-          width: rect.width,
-          height: rect.height,
-          clientWidth: containerRef.current.clientWidth,
-          clientHeight: containerRef.current.clientHeight
-        })
+
+  // API retry utility with exponential backoff
+  const apiCallWithRetry = async (apiCall: () => Promise<any>, maxRetries = 3) => {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        return await apiCall()
+      } catch (error) {
+        if (i === maxRetries - 1) throw error
+        // Exponential backoff: 1s, 2s, 4s
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000))
       }
     }
-
-    const interval = setInterval(checkDimensions, 1000)
-    checkDimensions() // Check immediately
-
-    return () => clearInterval(interval)
-  }, [])
+  }
 
   useEffect(() => {
+    if (!isVisible) return // Only load candles when component is visible
+
     let mounted = true
     let timer: any
 
     const loadCandles = async () => {
+      if (!API) return
+
       try {
-        console.log(`🔄 Loading ${tf} candles for ${symbol.ticker}.${symbol.exchange}`)
-
-        // Clear previous candles immediately
-        setCandles(null)
-
-        // Show loading state with indication that it might fetch fresh data
-        console.log(`📊 Checking database for ${tf} data...`)
-
-        // Always fetch fresh data from Yahoo Finance for real-time charts
-        console.log(`📡 Fetching fresh ${tf} candles from Yahoo Finance for ${symbol.ticker}...`)
+        setCandles(null) // Clear previous data
 
         const API_BASE = process.env.NEXT_PUBLIC_API_BASE
-        if (!API_BASE) {
-          throw new Error('API base URL not configured')
-        }
+        if (!API_BASE) throw new Error('API base URL not configured')
 
-        // Directly fetch from Yahoo Finance via our API endpoint
-        const fetchUrl = `${API_BASE}/candles/fetch?ticker=${symbol.ticker}&exchange=${symbol.exchange}&tf=${tf}&lookback_days=${tf === '1m' ? 2 : tf === '5m' ? 5 : 30}`
-        await axios.post(fetchUrl)
-        console.log(`✅ Successfully fetched fresh ${tf} data from Yahoo Finance`)
+        // Single consolidated API call with smart auto-fetch
+        const candlesUrl = `${API_BASE}/candles/ticker/${symbol.ticker}?exchange=${symbol.exchange}&tf=${tf}&limit=100&auto_fetch=true`
 
-        // Now fetch the fresh data from database using fresh=true parameter
-        const candlesUrl = `${API_BASE}/candles/ticker/${symbol.ticker}?exchange=${symbol.exchange}&tf=${tf}&limit=100&fresh=true`
-        const candlesRes = await axios.get(candlesUrl)
+        const candlesRes = await apiCallWithRetry(() =>
+          axios.get(candlesUrl, {
+            timeout: 10000, // 10 second timeout
+            headers: { 'Content-Type': 'application/json' }
+          })
+        )
+
+        if (!mounted) return
+
         let cs: Candle[] = candlesRes.data || []
 
-        // If no data from direct API call, try the marketAdapter as fallback
+        // Fallback to marketAdapter if no data
         if (cs.length === 0) {
-          console.log('📊 No data from direct API, trying marketAdapter...')
           const ad = await getMarketAdapter()
           cs = await ad.getCandles(symbol.ticker, symbol.exchange, tf, 100)
         }
 
-        if (!mounted) return
-
-        console.log(`✅ Loaded ${cs?.length || 0} ${tf} candles`)
-
         if (cs && cs.length > 0) {
-          // Filter out zero-value candles and invalid data
+          // Filter out invalid candles
           const validCandles = cs.filter(c =>
-            c &&
-            c.ts &&
-            typeof c.open === 'number' &&
-            typeof c.high === 'number' &&
-            typeof c.low === 'number' &&
-            typeof c.close === 'number' &&
+            c && c.ts &&
+            typeof c.open === 'number' && typeof c.close === 'number' &&
             !isNaN(c.open) && !isNaN(c.close) &&
-            c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0 // Filter out zero values
+            c.open > 0 && c.close > 0
           )
-
-          const zeroCandles = cs.filter(c => c.open === 0 || c.high === 0 || c.low === 0 || c.close === 0).length
-          console.log(`🔍 ${validCandles.length}/${cs.length} candles are valid (${zeroCandles} zero-value candles filtered out)`)
-
-          // Check if we have too many zero values (might indicate data quality issue)
-          const zeroPercentage = (zeroCandles / cs.length) * 100
-          if (zeroPercentage > 50) {
-            console.warn(`⚠️ High percentage of zero values (${zeroPercentage.toFixed(1)}%) - data quality may be poor`)
-          }
 
           if (validCandles.length > 0) {
             setCandles(validCandles)
-            const last = validCandles[validCandles.length - 1].close
-            console.log(`💰 Last candle price: ₹${last} (${validCandles.length} valid candles)`)
-            markPrice(symbol.ticker, symbol.exchange, last)
+            const lastPrice = validCandles[validCandles.length - 1].close
+            markPrice(symbol.ticker, symbol.exchange, lastPrice)
           } else {
-            console.warn(`⚠️ No valid candles after filtering zero values (${zeroCandles} zero-value candles found)`)
             setCandles([])
           }
         } else {
-          console.warn('⚠️ No candles received from API')
           setCandles([])
         }
 
-        // Auto-refresh based on timeframe - fetch fresh data from Yahoo Finance
-        const refreshInterval = tf === '1m' ? 30000 : tf === '5m' ? 60000 : tf === '15m' ? 120000 : 300000 // More frequent for real-time data
+        // Auto-refresh based on timeframe
+        const refreshInterval = tf === '1m' ? 30000 : tf === '5m' ? 60000 : 300000
         timer = setTimeout(loadCandles, refreshInterval)
 
       } catch (error) {
-        console.error(`❌ Error loading ${tf} candles:`, error)
         if (mounted) {
-          // Show error message when API is not available
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-          console.error('💥 API Error:', errorMessage)
+          console.error('Failed to load candles:', error instanceof Error ? error.message : String(error))
           setCandles([])
         }
       }
@@ -405,7 +386,7 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
       mounted = false
       if (timer) clearTimeout(timer)
     }
-  }, [symbol, tf, markPrice, forceRefresh])
+  }, [symbol, tf, markPrice, forceRefresh, API, isVisible])
 
   // Handle timeframe changes and price scale updates
   useEffect(() => {
@@ -418,51 +399,19 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
   }, [tf, candles])
 
   useEffect(() => {
-    if (!candles || !seriesRef.current || !chartRef.current) {
-      console.log('❌ Chart not ready:', {
-        candles: !!candles,
-        candlesLength: candles?.length || 0,
-        series: !!seriesRef.current,
-        chart: !!chartRef.current
-      })
-      return
-    }
-
-    if (candles.length === 0) {
-      console.log('⚠️ No candles to display')
-      return
-    }
-
-    console.log(`📈 Setting chart data with ${candles.length} candles`)
+    if (!candles || !seriesRef.current || !chartRef.current) return
+    if (candles.length === 0) return
 
     try {
       // Process candle data with proper time formatting
       const data = candles
-        .filter(c => c && c.ts && !isNaN(c.open) && !isNaN(c.close) && c.open > 0 && c.close > 0) // Filter out invalid and zero-value candles
-        .map((c, index) => {
+        .filter(c => c && c.ts && !isNaN(c.open) && !isNaN(c.close) && c.open > 0 && c.close > 0)
+        .map((c) => {
           // Convert to IST timestamp for proper Indian market hours display
-          // Yahoo Finance timestamps are in UTC, we need to convert to IST for display
           const utcTime = new Date(c.ts).getTime()
           const istOffset = 5.5 * 60 * 60 * 1000 // IST is UTC + 5:30
           const istTime = utcTime + istOffset
           const timestamp = Math.floor(istTime / 1000) as UTCTimestamp
-
-          // Debug first and last candles with timezone conversion
-          if (index === 0 || index === candles.length - 1) {
-            const utcTime = new Date(c.ts).getTime()
-            const istTime = utcTime + (5.5 * 60 * 60 * 1000) // IST = UTC + 5:30
-            const istDate = new Date(istTime)
-
-            console.log(`Candle ${index} (timezone conversion):`, {
-              originalUTC: c.ts,
-              originalUTCTime: new Date(c.ts).toLocaleString(),
-              convertedIST: istDate.toISOString(),
-              convertedISTTime: istDate.toLocaleString('en-IN'),
-              originalTimestamp: Math.floor(new Date(c.ts).getTime() / 1000),
-              convertedTimestamp: timestamp,
-              price: `${c.open} → ${c.close}`
-            })
-          }
 
           return {
             time: timestamp,
@@ -473,13 +422,7 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
           }
         })
 
-      console.log(`✅ Processed ${data.length} valid candles`)
-      console.log('Sample candles:', data.slice(0, 3), '...', data.slice(-3))
-
-      if (data.length === 0) {
-        console.warn('⚠️ No valid candles after filtering')
-        return
-      }
+      if (data.length === 0) return
 
       // Set data on the series
       seriesRef.current.setData(data)
@@ -516,8 +459,6 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
           autoScale: true,
         })
       }, 100)
-
-      console.log('✅ Chart data set successfully')
 
     } catch (error) {
       console.error('❌ Error setting chart data:', error)
@@ -565,8 +506,8 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
     }
 
     checkSignals()
-    interval = setInterval(checkSignals, 30000) // Check every 30 seconds
-
+    interval = setInterval(checkSignals, 60000) // Check once per minute
+  
     return () => {
       if (interval) clearInterval(interval)
     }
@@ -593,15 +534,20 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
                    value={`${symbol.ticker}-${symbol.exchange}`}
                    onChange={(e) => {
                      const [ticker, exchange] = e.target.value.split('-')
-                     setSymbol({ ticker, exchange: exchange as 'NSE'|'BSE' })
+                     const newSymbol = { ticker, exchange: exchange as 'NSE'|'BSE' }
+                     setSymbol(newSymbol)
                    }}
-                   disabled={symbolsLoading}
+                   disabled={symbolsLoading && availableSymbols.length === 0}
                  >
-                   {symbolsLoading ? (
-                     <option>Loading symbols...</option>
+                   {availableSymbols.length === 0 ? (
+                     symbolsLoading ? (
+                       <option>Loading symbols...</option>
+                     ) : (
+                       <option>No symbols available</option>
+                     )
                    ) : (
-                     availableSymbols.map((s) => (
-                       <option key={`${s.ticker}-${s.exchange}`} value={`${s.ticker}-${s.exchange}`}>
+                     availableSymbols.map((s, index) => (
+                       <option key={`${s.ticker}-${s.exchange}-${index}`} value={`${s.ticker}-${s.exchange}`}>
                          {s.ticker}.{s.exchange==='NSE'?'NS':'BO'} - {s.name || 'N/A'}
                        </option>
                      ))

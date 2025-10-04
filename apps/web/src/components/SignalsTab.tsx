@@ -5,7 +5,7 @@ import axios from 'axios'
 
 const API = process.env.NEXT_PUBLIC_API_BASE
 
-export default function SignalsTab() {
+export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }) {
   const [ticker, setTicker] = useState('')
   const [exchange, setExchange] = useState<'NSE' | 'BSE'>('NSE')
   const [tf, setTf] = useState('1m')
@@ -75,8 +75,10 @@ export default function SignalsTab() {
     }
   }
 
-  // Initial load effect
+  // Initial load effect - only when visible
   useEffect(() => {
+    if (!isVisible) return
+
     let mounted = true
 
     const loadInitialData = async () => {
@@ -135,18 +137,20 @@ export default function SignalsTab() {
 
     loadInitialData()
     return () => { mounted = false }
-  }, [debouncedTicker, exchange, tf])
+  }, [debouncedTicker, exchange, tf, isVisible])
 
-  // Background update effect - much smoother!
+  // Background update effect - only when visible!
   useEffect(() => {
-    if (!data || loading) return
+    if (!data || loading || !isVisible) return
 
     const interval = setInterval(() => {
-      updateSignalsInBackground()
-    }, 15000) // Less frequent, background only
+      if (isVisible) { // Double-check visibility
+        updateSignalsInBackground()
+      }
+    }, 60000) // Once per minute for signals updates
 
     return () => clearInterval(interval)
-  }, [data, debouncedTicker, exchange, tf])
+  }, [data, debouncedTicker, exchange, tf, isVisible])
 
   const runScan = async () => {
     if (!API) {

@@ -8,6 +8,7 @@ import History from '../components/History'
 import Header from '../components/Header'
 import Analytics from '../components/Analytics'
 import SignalsTab from '../components/SignalsTab'
+import { ThemeProvider } from '../components/ThemeProvider'
 
 const tabs = ["Markets","Trading","Signals","Portfolio","History"] as const
 
@@ -32,10 +33,11 @@ export default function Home() {
     }
     newVisibility[activeTab] = true
     setTabVisibility(newVisibility)
-  }, [activeTab])
+  }, [activeTab]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900">
+    <ThemeProvider>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 dark:from-gray-900 dark:via-blue-900 dark:to-indigo-900">
       {/* Mobile-Responsive Header */}
       <div className="w-full px-2 sm:px-4 py-1 sm:py-1.5">
         <Header />
@@ -105,7 +107,7 @@ export default function Home() {
         <Trading isVisible={tabVisibility.Trading} />
       </div>
       <div style={{ display: activeTab === 'Signals' ? 'block' : 'none' }}>
-        <SignalsTab />
+        <SignalsTab isVisible={tabVisibility.Signals} />
       </div>
       <div style={{ display: activeTab === 'Portfolio' ? 'block' : 'none' }}>
         <Portfolio />
@@ -115,6 +117,7 @@ export default function Home() {
         <Analytics />
       </div>
     </div>
+  </ThemeProvider>
   )
 }
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone, date
 from typing import Literal, Dict, Tuple
+import time
 
 import pandas as pd
 
@@ -83,45 +84,69 @@ def circuit_breaker_triggered(ticker: str, exchange: str, threshold_pct: float) 
 
 
 def suggest_position_size(ticker: str, exchange: str, price: float, atr: float | None, sector: str | None, limits: RiskLimitsCfg | None = None) -> float:
+    print(f"🔍 [RISK_ENGINE] suggest_position_size called for {ticker}.{exchange}, price={price}")
+    start_time = time.time()
+
     if not price or price <= 0:
+        print(f"⚠️ [RISK_ENGINE] Invalid price: {price}, returning 1.0")
         return 1.0
 
     # Primary logic: Suggest quantity for ~₹10,000 trade value
     target_value = 10000.0
     suggested_qty = target_value / price
+    print(f"💰 [RISK_ENGINE] Target value: ₹{target_value}, calculated qty: {suggested_qty}")
 
     # Round to reasonable precision (max 4 decimal places for low-priced stocks)
     if suggested_qty >= 100:
         suggested_qty = round(suggested_qty)  # Round to whole numbers for qty >= 100
+        print(f"🔢 [RISK_ENGINE] Rounded to whole number: {suggested_qty}")
     elif suggested_qty >= 10:
         suggested_qty = round(suggested_qty, 1)  # Round to 1 decimal for qty 10-99
+        print(f"🔢 [RISK_ENGINE] Rounded to 1 decimal: {suggested_qty}")
     elif suggested_qty >= 1:
         suggested_qty = round(suggested_qty, 2)  # Round to 2 decimals for qty 1-9
+        print(f"🔢 [RISK_ENGINE] Rounded to 2 decimals: {suggested_qty}")
     else:
         suggested_qty = round(suggested_qty, 4)  # Round to 4 decimals for fractional qty
+        print(f"🔢 [RISK_ENGINE] Rounded to 4 decimals: {suggested_qty}")
 
     # Apply lot size constraints if available
     sb = get_client()
     if sb:
         try:
+            print(f"📊 [RISK_ENGINE] Looking up lot size for {ticker}.{exchange}")
+            lot_start = time.time()
             sym = sb.table("symbols").select("lot_size").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
+            lot_end = time.time()
             lot_size = int(sym.get("lot_size") or 1) if sym else 1
+            print(f"✅ [RISK_ENGINE] Lot size lookup completed in {lot_end-lot_start:.2f}s: {lot_size}")
+
             if lot_size > 1:
+                original_qty = suggested_qty
                 suggested_qty = (int(suggested_qty) // lot_size) * lot_size
-        except:
+                print(f"📊 [RISK_ENGINE] Applied lot size {lot_size}: {original_qty} -> {suggested_qty}")
+        except Exception as e:
+            print(f"⚠️ [RISK_ENGINE] Lot size lookup failed: {e}")
             pass  # If lot size lookup fails, use calculated quantity
 
     # Fallback to risk management if suggested quantity seems unreasonable
     if suggested_qty <= 0 or suggested_qty > 10000:
+        print(f"⚠️ [RISK_ENGINE] Quantity {suggested_qty} seems unreasonable, using fallback risk management")
         # Fallback to original risk management logic
         limits = limits or get_limits()
+        print(f"📊 [RISK_ENGINE] Getting portfolio snapshot for fallback calculation")
+        snap_start = time.time()
         snap = portfolio_snapshot()
+        snap_end = time.time()
+        print(f"✅ [RISK_ENGINE] Portfolio snapshot completed in {snap_end-snap_start:.2f}s")
+
         equity = float(snap["equity"]) or 0.0
         per_trade_cap = equity * (limits.max_capital_per_trade_pct / 100.0)
         risk_per_share = atr if (atr and atr > 0) else price * 0.01
         k_fraction = max(0.1, min(1.0, limits.kelly_fraction))
         risk_budget = per_trade_cap * k_fraction
         qty = max(1.0, risk_budget / max(1e-6, risk_per_share))
+        print(f"📊 [RISK_ENGINE] Fallback calculation: equity={equity}, per_trade_cap={per_trade_cap}, qty={qty}")
 
         # Apply lot size to fallback quantity too
         sb = get_client()
@@ -130,11 +155,14 @@ def suggest_position_size(ticker: str, exchange: str, price: float, atr: float |
                 sym = sb.table("symbols").select("lot_size").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
                 lot = int(sym.get("lot_size") or 1) if sym else 1
                 qty = (int(qty) // lot) * lot
+                print(f"📊 [RISK_ENGINE] Applied lot size to fallback: {qty}")
             except:
                 pass
 
         suggested_qty = qty
 
+    end_time = time.time()
+    print(f"✅ [RISK_ENGINE] suggest_position_size completed in {end_time-start_time:.2f}s, returning: {suggested_qty}")
     return float(max(1, suggested_qty))
 
 

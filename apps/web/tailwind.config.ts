@@ -18,6 +18,15 @@ const config: Config = {
         negative: '#ef4444',
         warning: '#f59e0b',
       },
+      animation: {
+        shimmer: 'shimmer 2s ease-in-out infinite',
+      },
+      keyframes: {
+        shimmer: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(100%)' },
+        },
+      },
     },
   },
   plugins: [],
