@@ -296,6 +296,7 @@ def place_order(req: OrderRequest):
             "side": req.side,
             "price": fill.fill_price,
             "qty": fill.filled_qty,
+            "fees": 0,  # Default fees for paper trading
         }).execute().data[0]
         apply_trade_updates(symbol_id, req.side, fill.fill_price, fill.filled_qty)
     return order

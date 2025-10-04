@@ -107,11 +107,40 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
    const [autoTrading, setAutoTrading] = useState(false)
    const [lastSignal, setLastSignal] = useState<any>(null)
    const [forceRefresh, setForceRefresh] = useState(0) // Force refresh trigger
+   const [quantity, setQuantity] = useState<number>(10)
+   const [suggestedQty, setSuggestedQty] = useState<number>(10)
    const containerRef = useRef<HTMLDivElement>(null)
    const chartRef = useRef<any>(null)
    const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
    const placeOrder = useTradingStore(s => s.placeOrder)
    const markPrice = useTradingStore(s => s.markPrice)
+
+   // Fetch suggested quantity when symbol changes
+   useEffect(() => {
+       const fetchSuggestedQuantity = async () => {
+           if (!API || !apiConnected) return
+
+           try {
+               // Get current price from the candles data if available
+               let currentPrice = 1000 // Default fallback
+
+               if (candles && candles.length > 0) {
+                   currentPrice = candles[candles.length - 1].close
+               }
+
+               const response = await axios.get(`${API}/risk/size?ticker=${symbol.ticker}&exchange=${symbol.exchange}&price=${currentPrice}`)
+               const suggested = Math.max(1, Math.floor(response.data.qty))
+               setSuggestedQty(suggested)
+               setQuantity(suggested) // Auto-fill with suggested quantity
+           } catch (error) {
+               console.error('Failed to fetch suggested quantity:', error)
+               setSuggestedQty(10) // Fallback to 10
+               setQuantity(10)
+           }
+       }
+
+       fetchSuggestedQuantity()
+   }, [symbol, API, apiConnected, markPrice])
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -563,6 +592,31 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
                  </select>
                </div>
 
+               <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                 <div className="text-sm text-gray-300 mb-2">Quantity</div>
+                 <div className="flex items-center gap-2">
+                   <input
+                     type="number"
+                     min="1"
+                     max="10000"
+                     value={quantity}
+                     onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                     className="flex-1 bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                     placeholder="Enter quantity"
+                   />
+                   <button
+                     onClick={() => setQuantity(suggestedQty)}
+                     className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                     title={`Use suggested quantity: ${suggestedQty}`}
+                   >
+                     {suggestedQty}
+                   </button>
+                 </div>
+                 <div className="text-xs text-gray-400 mt-1">
+                   Suggested: {suggestedQty} shares
+                 </div>
+               </div>
+
                {API && (
                  <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                    <label className="flex items-center gap-3 mb-2">
@@ -584,16 +638,36 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
 
                <div className="grid grid-cols-2 gap-3">
                  <button
-                   onClick={async () => { await placeOrder({ ticker: symbol.ticker, exchange: symbol.exchange, side: 'BUY', qty: 10 }) }}
-                   className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 px-4 py-3 rounded-lg text-white font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-green-500/25"
+                   onClick={async () => {
+                     if (quantity > 0) {
+                       await placeOrder({
+                         ticker: symbol.ticker,
+                         exchange: symbol.exchange,
+                         side: 'BUY',
+                         qty: quantity
+                       })
+                     }
+                   }}
+                   disabled={quantity <= 0}
+                   className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 disabled:from-gray-600 disabled:to-gray-700 px-4 py-3 rounded-lg text-white font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-green-500/25 disabled:hover:scale-100 disabled:opacity-50"
                  >
-                   Buy Market
+                   Buy {quantity > 0 ? `${quantity}` : ''}
                  </button>
                  <button
-                   onClick={async () => { await placeOrder({ ticker: symbol.ticker, exchange: symbol.exchange, side: 'SELL', qty: 10 }) }}
-                   className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 px-4 py-3 rounded-lg text-white font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-red-500/25"
+                   onClick={async () => {
+                     if (quantity > 0) {
+                       await placeOrder({
+                         ticker: symbol.ticker,
+                         exchange: symbol.exchange,
+                         side: 'SELL',
+                         qty: quantity
+                       })
+                     }
+                   }}
+                   disabled={quantity <= 0}
+                   className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 disabled:from-gray-600 disabled:to-gray-700 px-4 py-3 rounded-lg text-white font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-red-500/25 disabled:hover:scale-100 disabled:opacity-50"
                  >
-                   Sell Market
+                   Sell {quantity > 0 ? `${quantity}` : ''}
                  </button>
                </div>
 

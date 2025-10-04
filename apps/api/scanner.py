@@ -12,29 +12,189 @@ from apps.api.signal_generator import ScoredSignal, score_signal, ensemble
 from apps.api.model_weights import get_latest_strategy_weights
 
 
+def get_existing_candle_info(symbol_id: str, tf: str) -> dict:
+    """Get information about existing candle data"""
+    try:
+        sb = get_client()
+        # Get the most recent candle
+        latest_candle = sb.table('candles').select('ts').eq('symbol_id', symbol_id).eq('timeframe', tf).order('ts', desc=True).limit(1).execute().data
+
+        if not latest_candle:
+            return {'exists': False, 'latest_date': None}
+
+        latest_date = latest_candle[0]['ts']
+
+        # Get total count
+        all_candles = sb.table('candles').select('ts').eq('symbol_id', symbol_id).eq('timeframe', tf).execute().data
+
+        return {
+            'exists': True,
+            'latest_date': latest_date,
+            'count': len(all_candles) if all_candles else 0
+        }
+    except Exception as e:
+        print(f"❌ Error checking existing candle data: {e}")
+        return {'exists': False, 'latest_date': None}
+
+def calculate_candle_delta_days(tf: str, existing_info: dict, max_lookback: int = 7) -> int:
+    """Calculate how many additional days of candle data we need"""
+    if not existing_info['exists']:
+        # No existing data, fetch full period
+        return max_lookback
+
+    latest_date = existing_info['latest_date']
+
+    # Handle both string and datetime objects
+    if isinstance(latest_date, str):
+        try:
+            from datetime import datetime, timezone
+            if latest_date.endswith('Z'):
+                latest_date = datetime.fromisoformat(latest_date.replace('Z', '+00:00'))
+            else:
+                latest_date = datetime.fromisoformat(latest_date)
+        except:
+            print(f"  ⚠️ Could not parse date: {latest_date}")
+            return 1
+
+    if isinstance(latest_date, datetime):
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+
+        # Convert to IST for market hours check
+        ist_hour = (now.hour + 5) % 24
+        ist_min = now.minute + 30
+        if ist_min >= 60:
+            ist_min -= 60
+            ist_hour = (ist_hour + 1) % 24
+
+        # Check if it's a weekday (1-5 = Monday-Friday)
+        is_weekday = 1 <= now.weekday() + 1 <= 5
+
+        # Check if within market hours (IST 9:15 AM - 3:30 PM)
+        is_market_hours = False
+        if is_weekday:
+            if ist_hour > 9 and ist_hour < 15:
+                is_market_hours = True
+            elif ist_hour == 9 and ist_min >= 15:
+                is_market_hours = True
+            elif ist_hour == 15 and ist_min <= 30:
+                is_market_hours = True
+
+        days_since_latest = (now - latest_date).days
+        hours_since_latest = (now - latest_date).total_seconds() / 3600
+
+        print(f"  📊 Debug: Current={now.strftime('%Y-%m-%d %H:%M')} UTC, Latest={latest_date.strftime('%Y-%m-%d %H:%M')} UTC")
+        print(f"  📊 Debug: Days diff={days_since_latest}, Hours diff={hours_since_latest:.1f}")
+
+        # Check if latest data is from today or yesterday (Friday if today is Saturday)
+        latest_is_today = latest_date.date() == now.date()
+        latest_is_yesterday = (now.date() - latest_date.date()).days == 1
+
+        # If outside market hours, be smart about data freshness
+        if not is_market_hours:
+            if latest_is_today:
+                print(f"  📊 Outside market hours - data is from today (latest: {latest_date.strftime('%Y-%m-%d %H:%M:%S')})")
+                return 0
+            elif latest_is_yesterday and now.weekday() == 5:  # Saturday, data from Friday
+                print(f"  📊 Weekend - data is from Friday (latest: {latest_date.strftime('%Y-%m-%d %H:%M:%S')})")
+                return 0
+            elif latest_is_yesterday and now.weekday() == 6:  # Sunday, data from Friday
+                print(f"  📊 Weekend - data is from Friday (latest: {latest_date.strftime('%Y-%m-%d %H:%M:%S')})")
+                return 0
+            elif days_since_latest >= 3:
+                print(f"  📊 Outside market hours but data is {days_since_latest} days old, fetching minimal update")
+                return min(2, max_lookback)  # Fetch max 2 days outside hours
+            else:
+                print(f"  📊 Outside market hours - data is {days_since_latest} day(s) old but markets closed")
+                return 0
+
+        # During market hours - check if we need fresh data
+        if days_since_latest <= 0:
+            print(f"  📊 Candle data is up to date (latest: {latest_date.strftime('%Y-%m-%d %H:%M:%S')})")
+            return 0
+
+        # Special handling: If data is from yesterday but markets just opened, fetch today's data
+        if latest_is_yesterday and is_market_hours and ist_hour <= 10:  # Early morning session
+            print(f"  📊 Fresh trading session - data from yesterday, fetching today's data")
+            return min(2, max_lookback)  # Fetch 1-2 days to get current session
+
+        # Calculate delta based on timeframe
+        if tf == '1m':
+            # For 1m data, check if we need recent data (within last 2 hours during market hours)
+            if hours_since_latest < 2:
+                print(f"  📊 1m data is recent ({hours_since_latest:.1f} hours old)")
+                return 0
+            delta_days = min(max_lookback, max(1, int(hours_since_latest / 24) + 1))
+        else:
+            # For other timeframes, use days but be more conservative during market hours
+            if days_since_latest <= 1:
+                print(f"  📊 {tf} data is recent ({days_since_latest} day old)")
+                return 0
+            delta_days = min(max_lookback, max(1, days_since_latest))
+
+        print(f"  📊 During market hours - data is {days_since_latest} days old, fetching {delta_days} additional days")
+        return delta_days
+
+    return 1
+
 def fetch_history_df(symbol_id: str, ticker: str, exchange: str, tf: str, lookback_days: int = 7) -> pd.DataFrame:
     sb = get_client()
-    # Try DB first
-    data = (
-        sb.table("candles").select("ts,open,high,low,close,volume")
-        .eq("symbol_id", symbol_id).eq("timeframe", tf)
-        .order("ts", desc=True).limit(1000).execute().data
-    )
-    if not data:
-        candles = fetch_yahoo_candles(ticker, exchange, tf, lookback_days=lookback_days)
-        rows = [{
-            "symbol_id": symbol_id,
-            "timeframe": tf,
-            "ts": c["ts"],
-            "open": c["open"],
-            "high": c["high"],
-            "low": c["low"],
-            "close": c["close"],
-            "volume": c.get("volume"),
-        } for c in candles]
-        if rows:
-            sb.table("candles").upsert(rows, on_conflict="symbol_id,timeframe,ts").execute()
-            data = rows
+
+    # Check existing data and calculate delta needed
+    existing_info = get_existing_candle_info(symbol_id, tf)
+    delta_days = calculate_candle_delta_days(tf, existing_info, lookback_days)
+
+    if delta_days == 0:
+        # Data is up to date, just fetch existing data
+        data = (
+            sb.table("candles").select("ts,open,high,low,close,volume")
+            .eq("symbol_id", symbol_id).eq("timeframe", tf)
+            .order("ts", desc=True).limit(1000).execute().data
+        )
+    else:
+        # Need to fetch delta data from Yahoo
+        print(f"📊 Fetching {delta_days} days of {tf} data for {ticker}")
+        candles = fetch_yahoo_candles(ticker, exchange, tf, lookback_days=delta_days)
+
+        if not candles:
+            print(f"⚠️ No new {tf} data available for {ticker}")
+            # Still fetch existing data from DB
+            data = (
+                sb.table("candles").select("ts,open,high,low,close,volume")
+                .eq("symbol_id", symbol_id).eq("timeframe", tf)
+                .order("ts", desc=True).limit(1000).execute().data
+            )
+        else:
+            rows = [{
+                "symbol_id": symbol_id,
+                "timeframe": tf,
+                "ts": c["ts"],
+                "open": c["open"],
+                "high": c["high"],
+                "low": c["low"],
+                "close": c["close"],
+                "volume": c.get("volume"),
+            } for c in candles]
+
+            # Insert only new candles (upsert handles duplicates)
+            if rows:
+                sb.table("candles").upsert(rows, on_conflict="symbol_id,timeframe,ts").execute()
+                print(f"💾 Stored {len(rows)} new {tf} candles for {ticker}")
+
+            # Fetch all data (including newly inserted)
+            data = (
+                sb.table("candles").select("ts,open,high,low,close,volume")
+                .eq("symbol_id", symbol_id).eq("timeframe", tf)
+                .order("ts", desc=True).limit(1000).execute().data
+            )
+
+        # Fetch all data (including newly inserted)
+        data = (
+            sb.table("candles").select("ts,open,high,low,close,volume")
+            .eq("symbol_id", symbol_id).eq("timeframe", tf)
+            .order("ts", desc=True).limit(1000).execute().data
+        )
+
     df = pd.DataFrame(data)
     if df.empty:
         return df
@@ -52,9 +212,19 @@ def scan_once(mode: str, force: bool = False) -> dict:
     run_id = run["id"]
     symbols = sb.table("symbols").select("id,ticker,exchange").eq("is_active", True).limit(250).execute().data
     total_signals = 0
+    delta_updates = 0
+    full_refreshes = 0
     for s in symbols:
         sid = s["id"]; ticker = s["ticker"]; exch = s["exchange"]
+        print(f"🔍 Scanning {ticker}...")
         df = fetch_history_df(sid, ticker, exch, tf=mode)
+
+        # Track if this was a delta update or full refresh
+        existing_info = get_existing_candle_info(sid, mode)
+        if existing_info['exists']:
+            delta_updates += 1
+        else:
+            full_refreshes += 1
         if df.empty or len(df) < 60:
             continue
         df = add_core_indicators(df)
@@ -154,6 +324,20 @@ def scan_once(mode: str, force: bool = False) -> dict:
         }).execute()
         total_signals += len(rows)
     sb.table("strategy_runs").update({"symbols_scanned": len(symbols or []), "signals_generated": total_signals, "completed_at": datetime.now(timezone.utc).isoformat()}).eq("id", run_id).execute()
-    return {"run_id": run_id, "signals": total_signals, "symbols_scanned": len(symbols or [])}
+
+    print("\n📋 SCAN SUMMARY:")
+    print(f"  Total symbols processed: {len(symbols or [])}")
+    print(f"  Delta updates: {delta_updates}")
+    print(f"  Full refreshes: {full_refreshes}")
+    print(f"  Total signals generated: {total_signals}")
+    print(f"  Efficiency: {delta_updates/(delta_updates+full_refreshes)*100:.1f}% delta updates")
+
+    return {
+        "run_id": run_id,
+        "signals": total_signals,
+        "symbols_scanned": len(symbols or []),
+        "delta_updates": delta_updates,
+        "full_refreshes": full_refreshes
+    }
 
 
