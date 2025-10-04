@@ -59,6 +59,4 @@ jobs:
         if: success() # Only run if market hours check passed
         run: |
           curl -sS -X POST "https://aitradingapp.onrender.com/scanner/run?mode=1m"
-          curl -sS -X POST "https://aitradingapp.onrender.com/scanner/run?mode=1m"
-
 
