@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check market hours and holidays
+        id: market-check
         run: |
           # Get current UTC time
           UTC_HOUR=$(date -u +%H)
@@ -36,6 +37,7 @@ jobs:
           # Check if it's a weekday (1-5 = Monday-Friday)
           if [ "$DAY_OF_WEEK" -lt 1 ] || [ "$DAY_OF_WEEK" -gt 5 ]; then
             echo "⚠️ Weekend detected. Skipping scan."
+            echo "market_open=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -43,20 +45,24 @@ jobs:
           if [ "$IST_HOUR" -lt 9 ] || [ "$IST_HOUR" -gt 15 ]; then
             if [ "$IST_HOUR" -eq 9 ] && [ "$IST_MIN" -lt 15 ]; then
               echo "⚠️ Before market opens (9:15 AM IST). Skipping scan."
+              echo "market_open=false" >> $GITHUB_OUTPUT
               exit 0
             fi
             if [ "$IST_HOUR" -eq 15 ] && [ "$IST_MIN" -gt 30 ]; then
               echo "⚠️ After market closes (3:30 PM IST). Skipping scan."
+              echo "market_open=false" >> $GITHUB_OUTPUT
               exit 0
             fi
             echo "⚠️ Outside market hours. Skipping scan."
+            echo "market_open=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
           echo "✅ Market is open. Proceeding with scan."
+          echo "market_open=true" >> $GITHUB_OUTPUT
 
       - name: Call scanner 15m
-        if: success() # Only run if market hours check passed
+        if: steps.market-check.outputs.market_open == 'true'
         run: |
           curl -sS -X POST "https://aitradingapp.onrender.com/scanner/run?mode=15m"
 
