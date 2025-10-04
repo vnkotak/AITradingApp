@@ -25,9 +25,9 @@ function WelcomeHeroSection({ data, isUpdating, marketStatus, clientMarketStatus
 
   useEffect(() => {
     const hour = time.getHours()
-    if (hour < 12) setGreeting('Good morning')
-    else if (hour < 17) setGreeting('Good afternoon')
-    else setGreeting('Good evening')
+    if (hour < 12) setGreeting('Good Morning')
+    else if (hour < 17) setGreeting('Good Afternoon')
+    else setGreeting('Good Evening')
   }, [time])
 
   return (
@@ -60,7 +60,7 @@ function WelcomeHeroSection({ data, isUpdating, marketStatus, clientMarketStatus
       {/* Welcome Message */}
       <div className="relative z-10 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
-          {greeting}, Trader! 👋
+          {greeting}, Vishal! 👋
         </h1>
         <p className="text-gray-300 text-sm sm:text-base">
           Welcome to your AI-powered trading dashboard. Stay ahead with real-time insights and automated signals.

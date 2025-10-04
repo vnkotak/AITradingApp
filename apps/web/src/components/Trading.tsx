@@ -8,39 +8,6 @@ import { useTradingStore } from '../store/trading'
 import { UTCTimestamp } from 'lightweight-charts'
 import axios from 'axios'
 
-function TradingStatus() {
-   const positions = useTradingStore(s => s.positions)
-   const orders = useTradingStore(s => s.orders)
-   const cash = useTradingStore(s => s.cash)
-
-   // Calculate total exposure and positions value
-   const totalExposure = Object.values(positions).reduce((sum, pos) => {
-     return sum + (Math.abs(pos.qty) * pos.avgPrice)
-   }, 0)
-
-   return (
-       <div className="bg-gradient-to-r from-slate-800/50 to-blue-900/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/50 mb-4 sm:mb-6">
-         <div className="flex items-center gap-2 mb-3 sm:mb-4">
-           <div className="w-2 h-6 sm:h-8 bg-blue-500 rounded-full"></div>
-           <h3 className="text-lg sm:text-xl font-bold text-white">Portfolio Status</h3>
-         </div>
-         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6">
-         <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-           <div className="text-sm text-gray-300 mb-1">Available Cash</div>
-           <div className="text-2xl font-bold text-white">₹{cash.toLocaleString('en-IN')}</div>
-         </div>
-         <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-           <div className="text-sm text-gray-300 mb-1">Active Positions</div>
-           <div className="text-2xl font-bold text-blue-400">{Object.keys(positions).length}</div>
-         </div>
-         <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-           <div className="text-sm text-gray-300 mb-1">Total Exposure</div>
-           <div className="text-2xl font-bold text-purple-400">₹{totalExposure.toLocaleString('en-IN')}</div>
-         </div>
-       </div>
-     </div>
-   )
- }
 
 const API = process.env.NEXT_PUBLIC_API_BASE
 
@@ -172,10 +139,67 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
    const [forceRefresh, setForceRefresh] = useState(0) // Force refresh trigger
    const [quantity, setQuantity] = useState<number>(10)
    const [suggestedQty, setSuggestedQty] = useState<number>(10)
+   const [orderFeedback, setOrderFeedback] = useState<{type: 'success'|'error'|'processing', message: string} | null>(null)
+   const [isPlacingOrder, setIsPlacingOrder] = useState(false)
    const containerRef = useRef<HTMLDivElement>(null)
    const chartRef = useRef<any>(null)
    const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
    const placeOrder = useTradingStore(s => s.placeOrder)
+   const positions = useTradingStore(s => s.positions)
+   const setPositions = useTradingStore(s => s.setPositions)
+
+   // Get current position for selected symbol
+   const getPositionKey = useTradingStore(s => s.getPositionKey)
+   const currentPositionKey = getPositionKey(symbol.ticker, symbol.exchange)
+   const currentPosition = positions[currentPositionKey]
+   const ownedQuantity = currentPosition?.qty || 0
+
+   // Load positions if not already loaded
+   useEffect(() => {
+     const loadPositionsIfNeeded = async () => {
+       // If we have no positions, try to load from database
+       if (Object.keys(positions).length === 0) {
+         try {
+           const API_BASE = process.env.NEXT_PUBLIC_API_BASE
+           if (!API_BASE) return
+
+           console.log('Trading: Loading positions from database...')
+           const response = await fetch(`${API_BASE}/positions`)
+           if (response.ok) {
+             const dbPositions = await response.json()
+             console.log('Trading: Raw positions from database:', dbPositions)
+
+             // Convert database positions to local store format
+             const positionsMap: Record<string, any> = {}
+             for (const pos of dbPositions) {
+               if (pos.ticker && pos.exchange && pos.qty !== 0) {
+                 const key = `${pos.ticker}.${pos.exchange}`
+                 positionsMap[key] = {
+                   ticker: pos.ticker,
+                   exchange: pos.exchange,
+                   qty: pos.qty,
+                   avgPrice: pos.avg_price
+                 }
+               }
+             }
+
+             if (Object.keys(positionsMap).length > 0) {
+               setPositions(positionsMap)
+               console.log('Trading: Successfully loaded positions:', positionsMap)
+             } else {
+               setPositions({})
+               console.log('Trading: No positions found, clearing store')
+             }
+           }
+         } catch (error) {
+           console.error('Trading: Failed to load positions:', error)
+         }
+       }
+     }
+
+     loadPositionsIfNeeded()
+   }, [positions, setPositions])
+
    const markPrice = useTradingStore(s => s.markPrice)
 
    // Calculate suggested quantity locally when candles are available
@@ -204,6 +228,14 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
        setSuggestedQty(finalQty)
        setQuantity(finalQty)
    }, [candles, isVisible])
+
+   // Auto-hide order feedback after 3 seconds (except for processing state)
+   useEffect(() => {
+     if (orderFeedback && orderFeedback.type !== 'processing') {
+       const timer = setTimeout(() => setOrderFeedback(null), 3000)
+       return () => clearTimeout(timer)
+     }
+   }, [orderFeedback])
 
   useEffect(() => {
     if (!containerRef.current || !isVisible) return
@@ -516,8 +548,6 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
   return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-3 sm:p-6">
         <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
-         <TradingStatus />
-
          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-5 xl:gap-6">
            {/* Trade Panel */}
            <div className="xl:col-span-1 bg-slate-800/30 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-slate-700/30">
@@ -582,16 +612,30 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
                      className="flex-1 bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
                      placeholder="Enter quantity"
                    />
-                   <button
-                     onClick={() => setQuantity(suggestedQty)}
-                     className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
-                     title={`Use suggested quantity: ${suggestedQty}`}
-                   >
-                     {suggestedQty}
-                   </button>
+                   <div className="flex gap-1">
+                     <button
+                       onClick={() => setQuantity(suggestedQty)}
+                       className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                       title={`Use suggested quantity: ${suggestedQty}`}
+                     >
+                       {suggestedQty}
+                     </button>
+                     {ownedQuantity > 0 && (
+                       <button
+                         onClick={() => setQuantity(ownedQuantity)}
+                         className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
+                         title={`Sell all ${ownedQuantity} shares`}
+                       >
+                         All
+                       </button>
+                     )}
+                   </div>
                  </div>
-                 <div className="text-xs text-gray-400 mt-1">
-                   Suggested: {suggestedQty} shares
+                 <div className="text-xs text-gray-400 mt-1 flex justify-between items-center">
+                   <span>Suggested: {suggestedQty} shares</span>
+                   {ownedQuantity > 0 && (
+                     <span className="text-blue-400">Owned: {ownedQuantity} shares</span>
+                   )}
                  </div>
                </div>
 
@@ -614,38 +658,121 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
                  </div>
                )}
 
+               {/* Order Feedback */}
+               {orderFeedback && (
+                 <div className={`p-3 rounded-lg border text-center font-medium ${
+                   orderFeedback.type === 'success'
+                     ? 'bg-green-900/20 border-green-700/50 text-green-400'
+                     : orderFeedback.type === 'processing'
+                     ? 'bg-blue-900/20 border-blue-700/50 text-blue-400'
+                     : 'bg-red-900/20 border-red-700/50 text-red-400'
+                 }`}>
+                   {orderFeedback.type === 'success' ? '✅' :
+                    orderFeedback.type === 'processing' ? '⏳' : '❌'} {orderFeedback.message}
+                 </div>
+               )}
+
                <div className="grid grid-cols-2 gap-3">
                  <button
                    onClick={async () => {
-                     if (quantity > 0) {
-                       await placeOrder({
-                         ticker: symbol.ticker,
-                         exchange: symbol.exchange,
-                         side: 'BUY',
-                         qty: quantity
+                     if (quantity > 0 && !isPlacingOrder) {
+                       setIsPlacingOrder(true)
+                       setOrderFeedback({
+                         type: 'processing',
+                         message: `Placing BUY order for ${quantity} ${symbol.ticker}...`
                        })
+
+                       try {
+                         await placeOrder({
+                           ticker: symbol.ticker,
+                           exchange: symbol.exchange,
+                           side: 'BUY',
+                           qty: quantity
+                         })
+                         setOrderFeedback({
+                           type: 'success',
+                           message: `✅ BUY order placed: ${quantity} ${symbol.ticker} at market price`
+                         })
+                       } catch (error) {
+                         setOrderFeedback({
+                           type: 'error',
+                           message: `❌ Failed to place BUY order: ${error instanceof Error ? error.message : 'Unknown error'}`
+                         })
+                       } finally {
+                         setIsPlacingOrder(false)
+                       }
                      }
                    }}
-                   disabled={quantity <= 0}
-                   className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 disabled:from-gray-600 disabled:to-gray-700 px-4 py-3 rounded-lg text-white font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-green-500/25 disabled:hover:scale-100 disabled:opacity-50"
+                   disabled={quantity <= 0 || isPlacingOrder}
+                   className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 disabled:from-gray-600 disabled:to-gray-700 px-4 py-3 rounded-lg text-white font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-green-500/25 disabled:hover:scale-100 disabled:opacity-50 flex items-center justify-center gap-2"
                  >
-                   Buy {quantity > 0 ? `${quantity}` : ''}
+                   {isPlacingOrder && orderFeedback?.type === 'processing' ? (
+                     <>
+                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                       Processing...
+                     </>
+                   ) : (
+                     <>Buy {quantity > 0 ? `${quantity}` : ''}</>
+                   )}
                  </button>
                  <button
                    onClick={async () => {
-                     if (quantity > 0) {
+                     if (quantity <= 0 || isPlacingOrder) return
+
+                     // Validate sell quantity against owned shares
+                     if (ownedQuantity <= 0) {
+                       setOrderFeedback({
+                         type: 'error',
+                         message: `❌ No position in ${symbol.ticker} to sell`
+                       })
+                       return
+                     }
+
+                     if (quantity > ownedQuantity) {
+                       setOrderFeedback({
+                         type: 'error',
+                         message: `❌ Cannot sell ${quantity} shares. You only own ${ownedQuantity} shares of ${symbol.ticker}`
+                       })
+                       return
+                     }
+
+                     setIsPlacingOrder(true)
+                     setOrderFeedback({
+                       type: 'processing',
+                       message: `Placing SELL order for ${quantity} ${symbol.ticker}...`
+                     })
+
+                     try {
                        await placeOrder({
                          ticker: symbol.ticker,
                          exchange: symbol.exchange,
                          side: 'SELL',
                          qty: quantity
                        })
+                       setOrderFeedback({
+                         type: 'success',
+                         message: `✅ SELL order placed: ${quantity} ${symbol.ticker} at market price`
+                       })
+                     } catch (error) {
+                       setOrderFeedback({
+                         type: 'error',
+                         message: `❌ Failed to place SELL order: ${error instanceof Error ? error.message : 'Unknown error'}`
+                       })
+                     } finally {
+                       setIsPlacingOrder(false)
                      }
                    }}
-                   disabled={quantity <= 0}
-                   className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 disabled:from-gray-600 disabled:to-gray-700 px-4 py-3 rounded-lg text-white font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-red-500/25 disabled:hover:scale-100 disabled:opacity-50"
+                   disabled={quantity <= 0 || isPlacingOrder}
+                   className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 disabled:from-gray-600 disabled:to-gray-700 px-4 py-3 rounded-lg text-white font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-red-500/25 disabled:hover:scale-100 disabled:opacity-50 flex items-center justify-center gap-2"
                  >
-                   Sell {quantity > 0 ? `${quantity}` : ''}
+                   {isPlacingOrder && orderFeedback?.type === 'processing' ? (
+                     <>
+                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                       Processing...
+                     </>
+                   ) : (
+                     <>Sell {quantity > 0 ? `${quantity}` : ''}{ownedQuantity > 0 ? ` (max: ${ownedQuantity})` : ''}</>
+                   )}
                  </button>
                </div>
 

@@ -9,14 +9,22 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
    const [positions, setPositions] = useState<Record<string, any>>({})
    const [marks, setMarks] = useState<Record<string, number>>({})
    const [loading, setLoading] = useState(true)
+   const [refreshing, setRefreshing] = useState(false)
+   const portfolioRefreshTrigger = useTradingStore(s => s.portfolioRefreshTrigger)
 
-  // Load positions from database on mount
+  // Load positions from database on mount and when refresh is triggered
   useEffect(() => {
     const loadPositionsFromDB = async () => {
       try {
+        // If this is a refresh (not initial load), show refreshing state
+        if (!loading) {
+          setRefreshing(true)
+        }
+
         const API_BASE = process.env.NEXT_PUBLIC_API_BASE
         if (!API_BASE) {
           setLoading(false)
+          setRefreshing(false)
           return
         }
 
@@ -60,11 +68,12 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
         console.error('Failed to load positions from database:', error)
       } finally {
         setLoading(false)
+        setRefreshing(false)
       }
     }
 
     loadPositionsFromDB()
-  }, [setPositions])
+  }, [loading, setPositions, portfolioRefreshTrigger])
 
   useEffect(() => {
     if (!isVisible || loading) return // Only fetch prices when Portfolio tab is visible and positions are loaded
@@ -98,6 +107,12 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                <div className="flex items-center gap-1 text-green-400 text-sm">
                  <div className="w-1 h-1 bg-green-400 rounded-full animate-pulse"></div>
                  <span>Loading positions...</span>
+               </div>
+             )}
+             {refreshing && !loading && (
+               <div className="flex items-center gap-1 text-blue-400 text-sm">
+                 <div className="w-1 h-1 bg-blue-400 rounded-full animate-pulse"></div>
+                 <span>Refreshing positions...</span>
                </div>
              )}
            </div>

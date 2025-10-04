@@ -43,8 +43,10 @@ type TradingState = {
 	positions: Record<string, Position>
 	orders: Order[]
 	trades: Trade[]
+	portfolioRefreshTrigger: number
 	getPositionKey: (ticker: string, exchange: 'NSE'|'BSE') => string
 	setPositions: (positions: Record<string, Position>) => void
+	triggerPortfolioRefresh: () => void
 	placeOrder: (p: { ticker: string, exchange: 'NSE'|'BSE', side: OrderSide, type?: OrderType, qty: number, price?: number, tp_sl?: TP_SL }) => Promise<void>
 	markPrice: (ticker: string, exchange: 'NSE'|'BSE', price: number) => void
 	getPnL: (ticker: string, exchange: 'NSE'|'BSE', price: number) => { unrealized: number }
@@ -67,12 +69,16 @@ export const useTradingStore = create<TradingState>((set, get) => ({
 	positions: {}, // Start empty, load from database
 	orders: load()?.orders ?? [],
 	trades: load()?.trades ?? [],
+	portfolioRefreshTrigger: 0,
 	getPositionKey: (ticker, exchange) => `${ticker}.${exchange}`,
 	setPositions: (positions) => {
 		set({ positions })
 		// Save to localStorage for persistence
 		const current = load() || {}
 		save({ ...current, positions })
+	},
+	triggerPortfolioRefresh: () => {
+		set({ portfolioRefreshTrigger: get().portfolioRefreshTrigger + 1 })
 	},
 	async placeOrder({ ticker, exchange, side, type = 'MARKET', qty, price, tp_sl }) {
 		try {
@@ -122,7 +128,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
 				status: orderData.status || 'FILLED'
 			}
 
-			// If order was filled, create trade record
+			// If order was filled, create trade record and trigger portfolio refresh
 			if (orderData.status === 'FILLED' && orderData.price) {
 				const trade: Trade = {
 					id: orderData.id || Math.random().toString(36).slice(2),
@@ -166,6 +172,9 @@ export const useTradingStore = create<TradingState>((set, get) => ({
 
 				set({ positions, cash, orders, trades })
 				save({ positions: get().positions, cash: get().cash, orders: get().orders, trades: get().trades })
+
+				// Trigger portfolio refresh for components that need to reload from database
+				get().triggerPortfolioRefresh()
 			}
 
 			// Store TP/SL trackers
