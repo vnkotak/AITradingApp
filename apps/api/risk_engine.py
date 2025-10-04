@@ -83,21 +83,59 @@ def circuit_breaker_triggered(ticker: str, exchange: str, threshold_pct: float) 
 
 
 def suggest_position_size(ticker: str, exchange: str, price: float, atr: float | None, sector: str | None, limits: RiskLimitsCfg | None = None) -> float:
-    limits = limits or get_limits()
-    snap = portfolio_snapshot()
-    equity = float(snap["equity"]) or 0.0
-    per_trade_cap = equity * (limits.max_capital_per_trade_pct / 100.0)
-    risk_per_share = atr if (atr and atr > 0) else price * 0.01
-    # Kelly-style scaling with cap
-    k_fraction = max(0.1, min(1.0, limits.kelly_fraction))
-    risk_budget = per_trade_cap * k_fraction
-    qty = max(0.0, risk_budget / max(1e-6, risk_per_share))
-    # round down to lot size if exists
+    if not price or price <= 0:
+        return 1.0
+
+    # Primary logic: Suggest quantity for ~₹10,000 trade value
+    target_value = 10000.0
+    suggested_qty = target_value / price
+
+    # Round to reasonable precision (max 4 decimal places for low-priced stocks)
+    if suggested_qty >= 100:
+        suggested_qty = round(suggested_qty)  # Round to whole numbers for qty >= 100
+    elif suggested_qty >= 10:
+        suggested_qty = round(suggested_qty, 1)  # Round to 1 decimal for qty 10-99
+    elif suggested_qty >= 1:
+        suggested_qty = round(suggested_qty, 2)  # Round to 2 decimals for qty 1-9
+    else:
+        suggested_qty = round(suggested_qty, 4)  # Round to 4 decimals for fractional qty
+
+    # Apply lot size constraints if available
     sb = get_client()
-    sym = sb.table("symbols").select("lot_size").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
-    lot = int(sym.get("lot_size") or 1) if sym else 1
-    qty = (int(qty) // lot) * lot
-    return float(max(0, qty))
+    if sb:
+        try:
+            sym = sb.table("symbols").select("lot_size").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
+            lot_size = int(sym.get("lot_size") or 1) if sym else 1
+            if lot_size > 1:
+                suggested_qty = (int(suggested_qty) // lot_size) * lot_size
+        except:
+            pass  # If lot size lookup fails, use calculated quantity
+
+    # Fallback to risk management if suggested quantity seems unreasonable
+    if suggested_qty <= 0 or suggested_qty > 10000:
+        # Fallback to original risk management logic
+        limits = limits or get_limits()
+        snap = portfolio_snapshot()
+        equity = float(snap["equity"]) or 0.0
+        per_trade_cap = equity * (limits.max_capital_per_trade_pct / 100.0)
+        risk_per_share = atr if (atr and atr > 0) else price * 0.01
+        k_fraction = max(0.1, min(1.0, limits.kelly_fraction))
+        risk_budget = per_trade_cap * k_fraction
+        qty = max(1.0, risk_budget / max(1e-6, risk_per_share))
+
+        # Apply lot size to fallback quantity too
+        sb = get_client()
+        if sb:
+            try:
+                sym = sb.table("symbols").select("lot_size").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
+                lot = int(sym.get("lot_size") or 1) if sym else 1
+                qty = (int(qty) // lot) * lot
+            except:
+                pass
+
+        suggested_qty = qty
+
+    return float(max(1, suggested_qty))
 
 
 def daily_drawdown_exceeded(limits: RiskLimitsCfg | None = None) -> bool:

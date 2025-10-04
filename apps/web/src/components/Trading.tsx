@@ -53,57 +53,85 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
     const [tf, setTf] = useState<Timeframe>('1m')
     const [candles, setCandles] = useState<Candle[]|null>(null)
   
-      // Check API connectivity on component mount (reduced frequency)
+      // Check API connectivity on component mount (more resilient)
       useEffect(() => {
         const checkApiConnection = async () => {
-          if (!API) return
-  
+          if (!API) {
+            setApiConnected(false)
+            return
+          }
+
           try {
-            // Use the cached connection check instead of direct API call
-            await getMarketAdapter()
-            setApiConnected(true)
+            // Use direct health check instead of getMarketAdapter to avoid cascading failures
+            const response = await axios.get(`${API}/health`, { timeout: 3000 })
+            setApiConnected(response.data?.status === 'ok')
             console.log('✅ API server is running')
           } catch (error) {
             setApiConnected(false)
-            console.error('❌ API server not running at', API)
+            const errorMessage = error instanceof Error ? error.message : String(error)
+            console.warn('⚠️ API server health check failed:', errorMessage)
+
+            // Additional debugging for connection issues
+            if (errorMessage.includes('NetworkError') || errorMessage.includes('fetch')) {
+              console.error('🔍 Network error detected - checking if API server is running on localhost:8000')
+              console.error('💡 Try running: cd apps/api && python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload')
+            }
           }
         }
-  
+
         checkApiConnection()
-  
-        // Check connection every 60 seconds instead of continuously
-        const interval = setInterval(checkApiConnection, 60000)
-  
+
+        // Check connection every 30 seconds (more frequent but still reasonable)
+        const interval = setInterval(checkApiConnection, 30000)
+
         return () => clearInterval(interval)
       }, [API])
   
-      // Load available symbols on component mount
+      // Load available symbols on component mount (more resilient)
       useEffect(() => {
-        if (!API || !apiConnected) return
-  
+        if (!API) return
+
         const loadSymbols = async () => {
           setSymbolsLoading(true)
           try {
-            const response = await axios.get(`${API}/symbols?active=true`)
+            console.log('🔄 Loading symbols from API...')
+            const response = await axios.get(`${API}/symbols?active=true`, { timeout: 5000 })
             const symbols = response.data || []
-  
-            console.log('Available symbols:', symbols)
+
+            console.log('✅ Available symbols loaded:', symbols.length, 'symbols')
             setAvailableSymbols(symbols)
-  
+
             // If current symbol is not in the available symbols, switch to first available
             if (symbols.length > 0 && !symbols.find((s: any) => s.ticker === symbol.ticker && s.exchange === symbol.exchange)) {
               setSymbol({ ticker: symbols[0].ticker, exchange: symbols[0].exchange })
             }
           } catch (error) {
-            console.error('Failed to load symbols:', error)
-            setApiConnected(false)
+            const errorMessage = error instanceof Error ? error.message : String(error)
+            console.warn('⚠️ Failed to load symbols:', errorMessage)
+
+            // Show helpful error message in console for debugging
+            if (errorMessage.includes('NetworkError') || errorMessage.includes('fetch')) {
+              console.error('🔍 Symbols endpoint failed - checking if API server is accessible')
+              console.error('💡 Ensure API server is running: cd apps/api && python -m uvicorn main:app --host 0.0.0.0 --port 8000')
+            }
           } finally {
             setSymbolsLoading(false)
           }
         }
-  
+
+        // Load symbols immediately
         loadSymbols()
-      }, [API, apiConnected])
+
+        // Retry loading symbols every 30 seconds if we don't have any
+        const retryInterval = setInterval(() => {
+          if (availableSymbols.length === 0 && !symbolsLoading) {
+            console.log('🔄 Retrying symbols load...')
+            loadSymbols()
+          }
+        }, 30000)
+
+        return () => clearInterval(retryInterval)
+      }, [API, symbol])
    const [autoTrading, setAutoTrading] = useState(false)
    const [lastSignal, setLastSignal] = useState<any>(null)
    const [forceRefresh, setForceRefresh] = useState(0) // Force refresh trigger
@@ -115,10 +143,10 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
    const placeOrder = useTradingStore(s => s.placeOrder)
    const markPrice = useTradingStore(s => s.markPrice)
 
-   // Fetch suggested quantity when symbol changes
+   // Fetch suggested quantity when symbol changes (more resilient)
    useEffect(() => {
        const fetchSuggestedQuantity = async () => {
-           if (!API || !apiConnected) return
+           if (!API) return
 
            try {
                // Get current price from the candles data if available
@@ -128,19 +156,23 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
                    currentPrice = candles[candles.length - 1].close
                }
 
-               const response = await axios.get(`${API}/risk/size?ticker=${symbol.ticker}&exchange=${symbol.exchange}&price=${currentPrice}`)
+               const response = await axios.get(
+                   `${API}/risk/size?ticker=${symbol.ticker}&exchange=${symbol.exchange}&price=${currentPrice}`,
+                   { timeout: 5000 }
+               )
                const suggested = Math.max(1, Math.floor(response.data.qty))
                setSuggestedQty(suggested)
                setQuantity(suggested) // Auto-fill with suggested quantity
            } catch (error) {
-               console.error('Failed to fetch suggested quantity:', error)
+               console.warn('⚠️ Failed to fetch suggested quantity (using fallback):', error instanceof Error ? error.message : String(error))
                setSuggestedQty(10) // Fallback to 10
                setQuantity(10)
            }
        }
 
+       // Always try to fetch suggested quantity, regardless of connection status
        fetchSuggestedQuantity()
-   }, [symbol, API, apiConnected, markPrice])
+   }, [symbol, API, candles])
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -492,14 +524,17 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
     }
   }, [candles])
 
-  // Auto-trading effect - only when tab is visible
+  // Auto-trading effect - only when tab is visible (more resilient)
   useEffect(() => {
     if (!autoTrading || !API || !isVisible) return
 
     let interval: any
     const checkSignals = async () => {
       try {
-        const res = await axios.get(`${API}/signals?ticker=${symbol.ticker}&exchange=${symbol.exchange}&tf=${tf}&limit=1`)
+        const res = await axios.get(
+          `${API}/signals?ticker=${symbol.ticker}&exchange=${symbol.exchange}&tf=${tf}&limit=1`,
+          { timeout: 5000 }
+        )
         const signals = res.data || []
 
         if (signals.length > 0) {
@@ -525,12 +560,12 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
           }
         }
       } catch (error) {
-        console.error('Auto-trading error:', error)
+        console.warn('⚠️ Auto-trading signal check failed:', error instanceof Error ? error.message : String(error))
       }
     }
 
     checkSignals()
-    interval = setInterval(checkSignals, 30000) // Check every 30 seconds (reduced from 5 seconds)
+    interval = setInterval(checkSignals, 30000) // Check every 30 seconds
 
     return () => {
       if (interval) clearInterval(interval)
@@ -548,9 +583,6 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
              <div className="flex items-center gap-2 mb-4 sm:mb-6">
                <div className="w-2 h-6 sm:h-8 bg-green-500 rounded-full"></div>
                <h3 className="text-lg sm:text-xl font-bold text-white">Trading Panel</h3>
-               <div className={`px-2 py-1 rounded text-xs ${apiConnected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                 {apiConnected ? 'API Connected' : 'API Disconnected'}
-               </div>
              </div>
 
              <div className="space-y-4">
@@ -670,6 +702,64 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
                    Sell {quantity > 0 ? `${quantity}` : ''}
                  </button>
                </div>
+
+               {/* Connection Diagnostic Panel - shows when API is disconnected or no symbols */}
+               {(!apiConnected || availableSymbols.length === 0) && (
+                 <div className="bg-gradient-to-r from-red-900/20 to-orange-900/20 backdrop-blur-sm rounded-xl p-4 border border-red-700/30">
+                   <div className="flex items-center gap-2 mb-2">
+                     <div className="w-2 h-6 bg-red-500 rounded-full"></div>
+                     <span className="text-white font-semibold">
+                       {availableSymbols.length === 0 ? 'No Symbols Loaded' : 'Connection Issue'}
+                     </span>
+                   </div>
+                   <div className="text-sm text-gray-300 mb-3">
+                     {availableSymbols.length === 0
+                       ? 'Unable to load trading symbols. This may be due to:'
+                       : 'API server is not responding. This may be due to:'
+                     }
+                   </div>
+                   <div className="text-xs text-gray-400 space-y-1 mb-3">
+                     <div>• API server not running on localhost:8000</div>
+                     <div>• Database not configured or empty</div>
+                     <div>• Network connectivity issues</div>
+                     <div>• CORS configuration problems</div>
+                   </div>
+                   <div className="text-xs text-gray-500 font-mono bg-black/20 p-2 rounded mb-3">
+                     Try: cd apps/api && python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+                   </div>
+                   <div className="flex gap-2">
+                     <button
+                       onClick={() => window.location.reload()}
+                       className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                     >
+                       🔄 Refresh Page
+                     </button>
+                     <button
+                       onClick={async () => {
+                         try {
+                           console.log('🔍 Testing API endpoints...')
+                           const response = await fetch(`${API}/symbols?active=true`)
+                           console.log('📊 Symbols endpoint status:', response.status)
+                           if (response.ok) {
+                             const data = await response.json()
+                             console.log('📊 Symbols data:', data)
+                             alert(`Found ${data.length} symbols! Check console for details.`)
+                           } else {
+                             console.error('❌ Symbols endpoint failed:', response.statusText)
+                             alert(`Symbols endpoint failed: ${response.statusText}`)
+                           }
+                         } catch (error) {
+                           console.error('❌ API test failed:', error)
+                           alert(`API test failed: ${error instanceof Error ? error.message : String(error)}`)
+                         }
+                       }}
+                       className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
+                     >
+                       🧪 Test API
+                     </button>
+                   </div>
+                 </div>
+               )}
 
                {lastSignal && (
                  <div className="bg-gradient-to-r from-blue-900/20 to-purple-900/20 backdrop-blur-sm rounded-xl p-4 border border-blue-700/30">
