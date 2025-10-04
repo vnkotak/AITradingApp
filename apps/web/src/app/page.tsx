@@ -110,7 +110,7 @@ export default function Home() {
         <SignalsTab isVisible={tabVisibility.Signals} />
       </div>
       <div style={{ display: activeTab === 'Portfolio' ? 'block' : 'none' }}>
-        <Portfolio />
+        <Portfolio isVisible={tabVisibility.Portfolio} />
       </div>
       <div style={{ display: activeTab === 'History' ? 'block' : 'none' }}>
         <History />

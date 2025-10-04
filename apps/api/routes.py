@@ -300,14 +300,6 @@ def place_order(req: OrderRequest):
     }
     order = sb.table("orders").insert(order_row).execute().data[0]
     if fill.status == 'FILLED' and fill.fill_price is not None and fill.filled_qty > 0:
-        trade = sb.table("trades").insert({
-            "order_id": order["id"],
-            "symbol_id": symbol_id,
-            "side": req.side,
-            "price": fill.fill_price,
-            "qty": fill.filled_qty,
-            "fees": 0,  # Default fees for paper trading
-        }).execute().data[0]
         apply_trade_updates(symbol_id, req.side, fill.fill_price, fill.filled_qty)
     return order
 

@@ -4,11 +4,71 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTradingStore } from '../store/trading'
 import { getMarketAdapter } from '../lib/marketAdapter'
 
-export default function Portfolio() {
-  const positions = useTradingStore(s => s.positions)
-  const [marks, setMarks] = useState<Record<string, number>>({})
+export default function Portfolio({ isVisible = true }: { isVisible?: boolean }) {
+   // Temporarily bypass store, load directly from database
+   const [positions, setPositions] = useState<Record<string, any>>({})
+   const [marks, setMarks] = useState<Record<string, number>>({})
+   const [loading, setLoading] = useState(true)
+
+  // Load positions from database on mount
+  useEffect(() => {
+    const loadPositionsFromDB = async () => {
+      try {
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE
+        if (!API_BASE) {
+          setLoading(false)
+          return
+        }
+
+        console.log('Fetching positions from database...')
+        const response = await fetch(`${API_BASE}/positions`)
+        console.log('Positions API response status:', response.status)
+
+        if (response.ok) {
+          const dbPositions = await response.json()
+          console.log('Raw positions from database:', dbPositions)
+
+          // Convert database positions to local store format
+          // API already includes ticker and exchange
+          const positionsMap: Record<string, any> = {}
+          for (const pos of dbPositions) {
+            if (pos.ticker && pos.exchange && pos.qty !== 0) { // Only load non-zero positions
+              const key = `${pos.ticker}.${pos.exchange}`
+              positionsMap[key] = {
+                ticker: pos.ticker,
+                exchange: pos.exchange,
+                qty: pos.qty,
+                avgPrice: pos.avg_price
+              }
+              console.log('Added position:', key, positionsMap[key])
+            }
+          }
+
+          console.log('Final positions map:', positionsMap)
+
+          // Update component state with positions from DB
+          if (Object.keys(positionsMap).length > 0) {
+            setPositions(positionsMap)
+            console.log('✅ Successfully loaded positions from database:', positionsMap)
+          } else {
+            // Clear local positions if DB has no positions
+            setPositions({})
+            console.log('No positions found in database, clearing positions')
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load positions from database:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadPositionsFromDB()
+  }, [setPositions])
 
   useEffect(() => {
+    if (!isVisible || loading) return // Only fetch prices when Portfolio tab is visible and positions are loaded
+
     let mounted = true
     let timer: any
     const load = async () => {
@@ -23,7 +83,7 @@ export default function Portfolio() {
     }
     load()
     return () => { mounted = false; if (timer) clearTimeout(timer) }
-  }, [positions])
+  }, [positions, isVisible, loading])
 
   const rows = useMemo(() => Object.values(positions), [positions])
 
@@ -34,9 +94,21 @@ export default function Portfolio() {
            <div className="flex items-center gap-2 mb-4 sm:mb-6">
              <div className="w-2 h-6 sm:h-8 bg-green-500 rounded-full"></div>
              <h2 className="text-lg sm:text-2xl font-bold text-white">Portfolio Positions</h2>
+             {loading && (
+               <div className="flex items-center gap-1 text-green-400 text-sm">
+                 <div className="w-1 h-1 bg-green-400 rounded-full animate-pulse"></div>
+                 <span>Loading positions...</span>
+               </div>
+             )}
            </div>
 
-          {rows.length === 0 ? (
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="text-4xl mb-4">📊</div>
+              <div className="text-xl text-gray-300 mb-2">Loading Portfolio</div>
+              <div className="text-sm text-gray-400">Fetching positions from database...</div>
+            </div>
+          ) : rows.length === 0 ? (
             <div className="text-center py-12">
               <div className="text-4xl mb-4">📊</div>
               <div className="text-xl text-gray-300 mb-2">No Active Positions</div>

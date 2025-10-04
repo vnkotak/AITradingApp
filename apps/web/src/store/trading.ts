@@ -44,6 +44,7 @@ type TradingState = {
 	orders: Order[]
 	trades: Trade[]
 	getPositionKey: (ticker: string, exchange: 'NSE'|'BSE') => string
+	setPositions: (positions: Record<string, Position>) => void
 	placeOrder: (p: { ticker: string, exchange: 'NSE'|'BSE', side: OrderSide, type?: OrderType, qty: number, price?: number, tp_sl?: TP_SL }) => Promise<void>
 	markPrice: (ticker: string, exchange: 'NSE'|'BSE', price: number) => void
 	getPnL: (ticker: string, exchange: 'NSE'|'BSE', price: number) => { unrealized: number }
@@ -63,10 +64,16 @@ const save = (state: any) => {
 
 export const useTradingStore = create<TradingState>((set, get) => ({
 	cash: load()?.cash ?? 1_000_000,
-	positions: load()?.positions ?? {},
+	positions: {}, // Start empty, load from database
 	orders: load()?.orders ?? [],
 	trades: load()?.trades ?? [],
 	getPositionKey: (ticker, exchange) => `${ticker}.${exchange}`,
+	setPositions: (positions) => {
+		set({ positions })
+		// Save to localStorage for persistence
+		const current = load() || {}
+		save({ ...current, positions })
+	},
 	async placeOrder({ ticker, exchange, side, type = 'MARKET', qty, price, tp_sl }) {
 		try {
 			// Call the backend API for proper paper trading execution
