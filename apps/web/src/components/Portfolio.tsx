@@ -279,7 +279,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                        </div>
                      </div>
 
-                     <div className="grid grid-cols-2 md:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
+                     <div className="grid grid-cols-2 md:grid-cols-7 gap-2 sm:gap-3 md:gap-4">
                        <div className="bg-slate-900/30 rounded-lg p-2 sm:p-3">
                          <div className="text-xs text-gray-400 mb-1">Quantity</div>
                          <div className="text-sm sm:text-lg font-semibold text-white">{p.qty}</div>
@@ -300,6 +300,15 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                          <div className="text-xs text-gray-400 mb-1">Realized P&L</div>
                          <div className={`text-sm sm:text-lg font-semibold ${stockPerf?.realized_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                            {stockPerf ? (stockPerf.realized_pnl >= 0 ? '+' : '') + '₹' + stockPerf.realized_pnl.toLocaleString('en-IN') : 'N/A'}
+                         </div>
+                       </div>
+                       <div className="bg-slate-900/30 rounded-lg p-2 sm:p-3">
+                         <div className="text-xs text-gray-400 mb-1">Trades</div>
+                         <div className="text-sm sm:text-lg font-semibold text-orange-400">
+                           {stockPerf ? stockPerf.total_orders : 'N/A'}
+                         </div>
+                         <div className="text-xs text-gray-500">
+                           {stockPerf ? `${stockPerf.completed_trades}C/${stockPerf.total_orders}T` : ''}
                          </div>
                        </div>
                        <div className="bg-slate-900/30 rounded-lg p-2 sm:p-3">

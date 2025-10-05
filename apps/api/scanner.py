@@ -12,6 +12,48 @@ from apps.api.signal_generator import ScoredSignal, score_signal, ensemble
 from apps.api.model_weights import get_latest_strategy_weights
 
 
+def is_overbought_oversold(df: pd.DataFrame) -> bool:
+    """
+    Check if current market conditions are overbought or oversold.
+    Returns True if signals should be filtered out due to extreme conditions.
+    """
+    if df.empty or len(df) < 2:
+        return False
+
+    last = df.iloc[-1]
+
+    # RSI extremes
+    rsi = float(last.get("rsi14", 50))
+    if rsi > 75 or rsi < 25:  # Extreme overbought/oversold
+        return True
+
+    # MACD extreme divergence
+    macd = float(last.get("macd", 0))
+    macd_signal = float(last.get("macd_signal", 0))
+    macd_hist = float(last.get("macd_hist", 0))
+
+    # MACD histogram showing extreme momentum (potential exhaustion)
+    if abs(macd_hist) > abs(macd) * 0.8:  # Histogram very large relative to MACD
+        return True
+
+    # Bollinger Band extreme positioning
+    bb_upper = float(last.get("bb_upper", last.get("close", 0)))
+    bb_lower = float(last.get("bb_lower", last.get("close", 0)))
+    close = float(last.get("close", 0))
+
+    if bb_upper > 0:
+        bb_position = (close - bb_lower) / (bb_upper - bb_lower)
+        if bb_position > 0.95 or bb_position < 0.05:  # Price at extreme bands
+            return True
+
+    # ADX extreme trend strength (potential exhaustion)
+    adx = float(last.get("adx14", 25))
+    if adx > 60:  # Extremely strong trend may be exhausting
+        return True
+
+    return False
+
+
 def get_existing_candle_info(symbol_id: str, tf: str) -> dict:
     """Get information about existing candle data"""
     try:
@@ -274,10 +316,11 @@ def scan_once(mode: str, force: bool = False) -> dict:
         # IMPROVED: Filter for high-quality signals only
         quality_signals = []
         for sig in raw_signals:
-            # Only keep signals with improved logic and high confidence
+            # Only keep signals with improved logic, high confidence, and not in extreme conditions
             if (sig.rationale.get("improved", False) and
                 sig.confidence > 0.6 and
-                sig.strategy in ["trend_follow", "mean_reversion", "momentum"]):
+                sig.strategy in ["trend_follow", "mean_reversion", "momentum"] and
+                not is_overbought_oversold(df)):  # Filter out signals in extreme market conditions
                 quality_signals.append(sig)
 
         if quality_signals:

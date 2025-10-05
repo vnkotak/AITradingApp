@@ -67,7 +67,7 @@ class AutoExecutor:
         try:
             signals = self.sb.table("signals").select("""
                 id, ts, strategy, action, entry, stop, target, confidence,
-                symbol_id, timeframe
+                symbol_id, timeframe, rationale
             """).eq("timeframe", timeframe).gte("confidence", confidence_threshold).gte("ts", cutoff_time.isoformat()).order("ts", desc=True).execute().data or []
 
             # Attach symbol information to each signal
@@ -262,11 +262,21 @@ class AutoExecutor:
                     "qty": order_qty
                 }
 
-                # Add timeframe info to order for tracking
+                # Add detailed signal and indicator info for analysis
+                signal_rationale = signal.get('rationale', {})
+                scoring_info = signal_rationale.get('scoring', {})
+
                 order_payload["simulator_notes"] = {
+                    "strategy": signal.get('strategy', 'unknown'),
                     "timeframe": signal['timeframe'],
+                    "entry_price": signal['entry'],
+                    "stop_price": signal.get('stop'),
+                    "target_price": signal.get('target'),
+                    "confidence": signal['confidence'],
                     "signal_id": signal['id'],
-                    "strategy": signal.get('strategy', 'unknown')
+                    "rationale": signal_rationale.get('rationale', {}),
+                    "scoring": scoring_info,
+                    "indicators": scoring_info.get('features', {})
                 }
 
                 # Call the orders API
