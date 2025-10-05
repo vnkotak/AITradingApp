@@ -8,7 +8,10 @@ from apps.api.risk_engine import get_limits, suggest_position_size, should_block
 from apps.api.analytics import pnl_summary
 import random
 import time
+import logging
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -910,6 +913,43 @@ def get_market_news(limit: int = 5):
         }
     ]
     return news_items[:limit]
+
+
+@router.post("/auto-execute/run")
+def run_auto_execution(
+    timeframes: str = '1m',
+    confidence_threshold: float = 0.7,
+    dry_run: bool = False
+):
+    """Manually trigger automated paper trading execution for multiple timeframes"""
+    from apps.api.auto_execute_signals import AutoExecutor
+
+    try:
+        executor = AutoExecutor()
+        results = {}
+
+        # Split timeframes and execute for each
+        tf_list = [tf.strip() for tf in timeframes.split(',')]
+        for tf in tf_list:
+            logger.info(f"Processing timeframe: {tf}")
+            result = executor.run_execution_cycle(
+                timeframe=tf,
+                confidence_threshold=confidence_threshold,
+                dry_run=dry_run
+            )
+            results[tf] = result
+
+        return {
+            "timeframes_processed": tf_list,
+            "results": results,
+            "summary": {
+                "total_executed": sum(r.get("executed", 0) for r in results.values()),
+                "total_skipped": sum(r.get("skipped", 0) for r in results.values()),
+                "total_errors": sum(r.get("errors", 0) for r in results.values())
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Auto-execution error: {str(e)}")
 
 
 @router.get("/home/system-status")
