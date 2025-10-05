@@ -30,6 +30,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
+        run: |
+          cd apps/api
+          pip install -r requirements.txt
+
       - name: Check market hours and holidays
         id: market-check
         run: |
