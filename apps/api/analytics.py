@@ -38,54 +38,84 @@ def _equity_curve(days: int = 90) -> pd.Series:
         dates = pd.date_range(end=datetime.now(timezone.utc).date(), periods=min(days, 30))
         return pd.Series([start_equity]*len(dates), index=dates)
 
+    # OPTIMIZATION: Pre-process all orders into a time-sorted list with cumulative positions
+    orders_df = pd.DataFrame(orders)
+    orders_df['ts'] = pd.to_datetime(orders_df['ts'], utc=True)
+    orders_df['date'] = orders_df['ts'].dt.date
+    orders_df = orders_df.sort_values('ts')
+
+    # Get unique symbols for batch price queries
+    unique_symbols = orders_df['symbol_id'].unique()
+
+    # OPTIMIZATION: Pre-load all daily prices for all symbols (single batch query per symbol)
+    symbol_prices = {}
+    for symbol_id in unique_symbols:
+        try:
+            price_data = sb.table("candles").select("ts,close").eq("symbol_id", symbol_id).eq("timeframe", "1d").order("ts").execute().data or []
+            price_df = pd.DataFrame(price_data)
+            if not price_df.empty:
+                price_df['ts'] = pd.to_datetime(price_df['ts'], utc=True)
+                price_df['date'] = price_df['ts'].dt.date
+                symbol_prices[symbol_id] = price_df.set_index('date')['close'].to_dict()
+        except Exception as e:
+            print(f"Warning: Could not load prices for symbol {symbol_id}: {e}")
+            symbol_prices[symbol_id] = {}
+
     # Build daily equity curve from transactions
     dates = pd.date_range(end=datetime.now(timezone.utc).date(), periods=days)
     equity_values = []
+    current_positions = {}  # Track cumulative positions
+    cash = start_equity
+
+    # Process orders cumulatively
+    order_idx = 0
 
     for current_date in dates:
-        # Calculate equity up to this date by simulating portfolio value
-        portfolio_value = 0.0
-        cash = start_equity
+        current_date_only = current_date.date()
 
-        # Group orders by symbol up to current date
-        symbol_positions = {}
-
-        for order in orders:
-            order_date = pd.to_datetime(order['ts']).date()
-            if order_date > current_date.date():  # Compare date with date
-                continue
-
+        # Process any new orders for this date
+        while order_idx < len(orders_df) and orders_df.iloc[order_idx]['date'] <= current_date_only:
+            order = orders_df.iloc[order_idx]
             symbol_id = order['symbol_id']
             side = order['side']
             price = float(order['price'])
             qty = float(order['qty'])
 
-            if symbol_id not in symbol_positions:
-                symbol_positions[symbol_id] = 0
+            if symbol_id not in current_positions:
+                current_positions[symbol_id] = 0
 
             if side == 'BUY':
-                symbol_positions[symbol_id] += qty
+                current_positions[symbol_id] += qty
                 cash -= price * qty
             elif side == 'SELL':
-                symbol_positions[symbol_id] -= qty
+                current_positions[symbol_id] -= qty
                 cash += price * qty
 
-        # Get current prices for positions and calculate portfolio value
-        for symbol_id, position_qty in symbol_positions.items():
+            order_idx += 1
+
+        # Calculate portfolio value using current positions
+        portfolio_value = 0.0
+        for symbol_id, position_qty in current_positions.items():
             if position_qty != 0:
-                try:
-                    # Get price for this symbol on current date
-                    price_data = sb.table("candles").select("close").eq("symbol_id", symbol_id).eq("timeframe", "1d").lte("ts", current_date.date().isoformat()).order("ts", desc=True).limit(1).execute().data
-                    if price_data:
-                        current_price = float(price_data[0]['close'])
-                        portfolio_value += current_price * position_qty
+                # Use pre-loaded prices for this date
+                prices = symbol_prices.get(symbol_id, {})
+                current_price = None
+
+                # Find the closest available price (current date or most recent before)
+                for check_date in [current_date_only] + [current_date_only - timedelta(days=i) for i in range(1, 7)]:
+                    if check_date in prices:
+                        current_price = prices[check_date]
+                        break
+
+                if current_price is None:
+                    # Fallback: use last traded price from orders
+                    symbol_orders = orders_df[orders_df['symbol_id'] == symbol_id]
+                    if not symbol_orders.empty:
+                        current_price = float(symbol_orders.iloc[-1]['price'])
                     else:
-                        # Use last known price from orders as fallback
-                        last_order_price = next((float(o['price']) for o in reversed(orders) if o['symbol_id'] == symbol_id), 100)
-                        portfolio_value += last_order_price * position_qty
-                except:
-                    # Fallback price if no data
-                    portfolio_value += 100 * position_qty  # Reasonable fallback
+                        current_price = 100.0  # Ultimate fallback
+
+                portfolio_value += current_price * position_qty
 
         total_equity = max(0, cash + portfolio_value)  # Ensure non-negative
         equity_values.append(total_equity)

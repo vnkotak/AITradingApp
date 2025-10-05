@@ -28,7 +28,7 @@ def execute_backtest_trades(start_date: str = "2025-09-01", end_date: str = "202
     sb = supabase_client()
 
     # All strategies and timeframes to test - reduced for testing
-    strategies = ['momentum']
+    strategies = ['trend_follow', 'mean_reversion','momentum']
     timeframes = ['1m', '5m', '15m', '1h', '1d']
 
     # Load symbols - reduced for testing

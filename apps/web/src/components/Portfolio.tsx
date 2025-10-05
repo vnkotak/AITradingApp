@@ -44,7 +44,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
           // API already includes ticker and exchange
           const positionsMap: Record<string, any> = {}
           for (const pos of dbPositions) {
-            if (pos.ticker && pos.exchange && pos.qty !== 0) { // Only load non-zero positions
+            if (pos.ticker && pos.exchange) { // Show all positions including zero quantity
               const key = `${pos.ticker}.${pos.exchange}`
               positionsMap[key] = {
                 ticker: pos.ticker,
@@ -106,18 +106,43 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
 
     let mounted = true
     let timer: any
+
     const load = async () => {
-      const ad = await getMarketAdapter()
-      const kv: Record<string, number> = {}
-      for (const key of Object.keys(positions)) {
-        const p = positions[key]
-        kv[key] = await ad.getLastPrice(p.ticker, p.exchange)
+      // Double-check visibility before making API calls
+      if (!mounted || !isVisible) return
+
+      try {
+        const ad = await getMarketAdapter()
+        const kv: Record<string, number> = {}
+        for (const key of Object.keys(positions)) {
+          // Break if component unmounted or tab changed
+          if (!mounted || !isVisible) return
+
+          const p = positions[key]
+          kv[key] = await ad.getLastPrice(p.ticker, p.exchange)
+        }
+        if (mounted && isVisible) {
+          setMarks(kv)
+        }
+      } catch (error) {
+        console.error('Price refresh error:', error)
       }
-      if (mounted) setMarks(kv)
-      timer = setTimeout(load, 10000)
+
+      // Only schedule next refresh if still visible
+      if (mounted && isVisible) {
+        timer = setTimeout(load, 10000)
+      }
     }
+
     load()
-    return () => { mounted = false; if (timer) clearTimeout(timer) }
+
+    return () => {
+      mounted = false
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+    }
   }, [positions, isVisible, loading])
 
   // Create a map of stock performance data for quick lookup
@@ -235,7 +260,21 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
               <div className="text-sm text-gray-400">Your portfolio is currently empty</div>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
+              {/* Desktop: Table-like header */}
+              <div className="hidden lg:block bg-slate-800/20 rounded-lg p-3 mb-4">
+                <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-400">
+                  <div className="col-span-2">Stock</div>
+                  <div className="text-center">Qty</div>
+                  <div className="text-center">Avg Price</div>
+                  <div className="text-center">Current</div>
+                  <div className="text-center">P&L</div>
+                  <div className="text-center">Realized</div>
+                  <div className="text-center">Trades</div>
+                  <div className="text-center">Win Rate</div>
+                </div>
+              </div>
+
               {rows.map((p: any, index: number) => {
                  const key = `${p.ticker}.${p.exchange}`
                  const last = marks[key] ?? p.avgPrice
@@ -248,68 +287,144 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                  return (
                    <div
                      key={key}
-                     className="bg-white/5 rounded-lg sm:rounded-xl p-3 sm:p-6 border border-white/10 hover:border-white/20 transition-all duration-300 hover:scale-[1.02]"
-                     style={{ animationDelay: `${index * 100}ms` }}
+                     className="bg-white/5 rounded-lg border border-white/10 hover:border-white/20 transition-all duration-300"
+                     style={{ animationDelay: `${index * 50}ms` }}
                    >
-                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 sm:mb-4 gap-3 sm:gap-0">
-                       <div className="flex items-center gap-3 sm:gap-4">
-                         <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0">
-                           <span className="text-white font-bold text-sm sm:text-base">{p.ticker.slice(0, 2)}</span>
+                     {/* Mobile/Tablet: Card Layout */}
+                     <div className="block lg:hidden p-4">
+                       <div className="flex items-center justify-between mb-3">
+                         <div className="flex items-center gap-3">
+                           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                             <span className="text-white font-bold text-sm">{p.ticker.slice(0, 2)}</span>
+                           </div>
+                           <div>
+                             <div className="font-bold text-white">{p.ticker}</div>
+                             <div className="text-xs text-gray-400">{p.exchange === 'NSE' ? 'NSE' : 'BSE'}</div>
+                           </div>
                          </div>
-                         <div className="min-w-0">
-                           <div className="text-lg sm:text-xl font-bold text-white truncate">{p.ticker}</div>
-                           <div className="text-xs sm:text-sm text-gray-400 truncate">{p.exchange === 'NSE' ? 'National Stock Exchange' : 'Bombay Stock Exchange'}</div>
+                         <div className="text-right">
+                           <div className={`text-lg font-bold ${unreal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                             ₹{unreal.toFixed(2)}
+                           </div>
+                           <div className={`text-xs ${unreal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                             {percentChange >= 0 ? '+' : ''}{percentChange.toFixed(2)}%
+                           </div>
                          </div>
                        </div>
-                       <div className="text-center sm:text-right">
-                         <div className={`text-xl sm:text-2xl font-bold ${unreal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                           ₹{unreal.toFixed(2)}
+
+                       <div className="grid grid-cols-4 gap-2 text-center">
+                         <div className="bg-slate-900/30 rounded p-2">
+                           <div className="text-xs text-gray-400 mb-1">Qty</div>
+                           <div className="text-sm font-semibold text-white">{p.qty}</div>
                          </div>
-                         <div className={`text-xs sm:text-sm ${unreal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                           {percentChange >= 0 ? '+' : ''}{percentChange.toFixed(2)}%
+                         <div className="bg-slate-900/30 rounded p-2">
+                           <div className="text-xs text-gray-400 mb-1">Avg</div>
+                           <div className="text-sm font-semibold text-blue-400">₹{Number(p.avgPrice).toFixed(0)}</div>
+                         </div>
+                         <div className="bg-slate-900/30 rounded p-2">
+                           <div className="text-xs text-gray-400 mb-1">Current</div>
+                           <div className="text-sm font-semibold text-purple-400">₹{Number(last).toFixed(0)}</div>
+                         </div>
+                         <div className="bg-slate-900/30 rounded p-2">
+                           <div className="text-xs text-gray-400 mb-1">Value</div>
+                           <div className="text-sm font-semibold text-white">₹{(Math.abs(p.qty) * last).toFixed(0)}</div>
                          </div>
                        </div>
+
+                       {(stockPerf?.total_orders > 0) && (
+                         <div className="mt-3 pt-3 border-t border-slate-700/30">
+                           <div className="grid grid-cols-3 gap-2 text-center">
+                             <div>
+                               <div className="text-xs text-gray-400 mb-1">Realized P&L</div>
+                               <div className={`text-sm font-semibold ${stockPerf?.realized_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                 {stockPerf ? (stockPerf.realized_pnl >= 0 ? '+' : '') + '₹' + stockPerf.realized_pnl.toLocaleString('en-IN') : 'N/A'}
+                               </div>
+                             </div>
+                             <div>
+                               <div className="text-xs text-gray-400 mb-1">Trades</div>
+                               <div className="text-sm font-semibold text-orange-400">
+                                 {stockPerf ? stockPerf.total_orders : 'N/A'}
+                               </div>
+                             </div>
+                             <div>
+                               <div className="text-xs text-gray-400 mb-1">Win Rate</div>
+                               <div className="text-sm font-semibold text-blue-400">
+                                 {stockPerf ? `${stockPerf.win_rate}%` : 'N/A'}
+                               </div>
+                             </div>
+                           </div>
+                         </div>
+                       )}
                      </div>
 
-                     <div className="grid grid-cols-2 md:grid-cols-7 gap-2 sm:gap-3 md:gap-4">
-                       <div className="bg-slate-900/30 rounded-lg p-2 sm:p-3">
-                         <div className="text-xs text-gray-400 mb-1">Quantity</div>
-                         <div className="text-sm sm:text-lg font-semibold text-white">{p.qty}</div>
-                       </div>
-                       <div className="bg-slate-900/30 rounded-lg p-2 sm:p-3">
-                         <div className="text-xs text-gray-400 mb-1">Avg Price</div>
-                         <div className="text-sm sm:text-lg font-semibold text-blue-400">₹{Number(p.avgPrice).toFixed(2)}</div>
-                       </div>
-                       <div className="bg-slate-900/30 rounded-lg p-2 sm:p-3">
-                         <div className="text-xs text-gray-400 mb-1">Current Price</div>
-                         <div className="text-sm sm:text-lg font-semibold text-purple-400">₹{Number(last).toFixed(2)}</div>
-                       </div>
-                       <div className="bg-slate-900/30 rounded-lg p-2 sm:p-3">
-                         <div className="text-xs text-gray-400 mb-1">Position Value</div>
-                         <div className="text-sm sm:text-lg font-semibold text-white">₹{(Math.abs(p.qty) * last).toFixed(2)}</div>
-                       </div>
-                       <div className="bg-slate-900/30 rounded-lg p-2 sm:p-3">
-                         <div className="text-xs text-gray-400 mb-1">Realized P&L</div>
-                         <div className={`text-sm sm:text-lg font-semibold ${stockPerf?.realized_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                           {stockPerf ? (stockPerf.realized_pnl >= 0 ? '+' : '') + '₹' + stockPerf.realized_pnl.toLocaleString('en-IN') : 'N/A'}
+                     {/* Desktop: Table Row Layout */}
+                     <div className="hidden lg:block p-3">
+                       <div className="grid grid-cols-12 gap-4 items-center text-sm">
+                         {/* Stock Info */}
+                         <div className="col-span-2 flex items-center gap-3">
+                           <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded flex items-center justify-center flex-shrink-0">
+                             <span className="text-white font-bold text-xs">{p.ticker.slice(0, 2)}</span>
+                           </div>
+                           <div className="min-w-0">
+                             <div className="font-semibold text-white truncate">{p.ticker}</div>
+                             <div className="text-xs text-gray-400">{p.exchange === 'NSE' ? 'NSE' : 'BSE'}</div>
+                           </div>
                          </div>
-                       </div>
-                       <div className="bg-slate-900/30 rounded-lg p-2 sm:p-3">
-                         <div className="text-xs text-gray-400 mb-1">Trades</div>
-                         <div className="text-sm sm:text-lg font-semibold text-orange-400">
-                           {stockPerf ? stockPerf.total_orders : 'N/A'}
+
+                         {/* Quantity */}
+                         <div className="text-center">
+                           <div className="font-semibold text-white">{p.qty}</div>
                          </div>
-                         <div className="text-xs text-gray-500">
-                           {stockPerf ? `${stockPerf.completed_trades}C/${stockPerf.total_orders}T` : ''}
+
+                         {/* Avg Price */}
+                         <div className="text-center">
+                           <div className="font-semibold text-blue-400">₹{Number(p.avgPrice).toFixed(2)}</div>
                          </div>
-                       </div>
-                       <div className="bg-slate-900/30 rounded-lg p-2 sm:p-3">
-                         <div className="text-xs text-gray-400 mb-1">Win Rate</div>
-                         <div className="text-sm sm:text-lg font-semibold text-blue-400">
-                           {stockPerf ? `${stockPerf.win_rate}%` : 'N/A'}
+
+                         {/* Current Price */}
+                         <div className="text-center">
+                           <div className="font-semibold text-purple-400">₹{Number(last).toFixed(2)}</div>
                          </div>
-                         <div className="text-xs text-gray-500">
-                           {stockPerf ? `${stockPerf.winning_trades}W/${stockPerf.completed_trades}T` : ''}
+
+                         {/* P&L */}
+                         <div className="text-center">
+                           <div className={`font-semibold ${unreal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                             ₹{unreal.toFixed(2)}
+                           </div>
+                           <div className={`text-xs ${unreal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                             {percentChange >= 0 ? '+' : ''}{percentChange.toFixed(1)}%
+                           </div>
+                         </div>
+
+                         {/* Realized P&L */}
+                         <div className="text-center">
+                           <div className={`font-semibold ${stockPerf?.realized_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                             {stockPerf ? (stockPerf.realized_pnl >= 0 ? '+' : '') + '₹' + stockPerf.realized_pnl.toLocaleString('en-IN') : 'N/A'}
+                           </div>
+                         </div>
+
+                         {/* Trades */}
+                         <div className="text-center">
+                           <div className="font-semibold text-orange-400">
+                             {stockPerf ? stockPerf.total_orders : 'N/A'}
+                           </div>
+                           {stockPerf && (
+                             <div className="text-xs text-gray-500">
+                               {stockPerf.completed_trades}C
+                             </div>
+                           )}
+                         </div>
+
+                         {/* Win Rate */}
+                         <div className="text-center">
+                           <div className="font-semibold text-blue-400">
+                             {stockPerf ? `${stockPerf.win_rate}%` : 'N/A'}
+                           </div>
+                           {stockPerf && (
+                             <div className="text-xs text-gray-500">
+                               {stockPerf.winning_trades}W
+                             </div>
+                           )}
                          </div>
                        </div>
                      </div>
