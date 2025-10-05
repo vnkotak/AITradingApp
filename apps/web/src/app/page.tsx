@@ -112,7 +112,7 @@ export default function Home() {
         <Portfolio isVisible={tabVisibility.Portfolio} />
       </div>
       <div style={{ display: activeTab === 'History' ? 'block' : 'none' }}>
-        <History />
+        <History isVisible={tabVisibility.History} />
       </div>
     </div>
   </ThemeProvider>

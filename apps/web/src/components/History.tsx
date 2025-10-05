@@ -1,19 +1,23 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import axios from 'axios'
+import { createChart, IChartApi, ISeriesApi, LineData, ColorType } from 'lightweight-charts'
 
 const API = process.env.NEXT_PUBLIC_API_BASE
 
 export default function History({ isVisible = true }: { isVisible?: boolean }) {
-   const [dbOrders, setDbOrders] = useState<any[]>([])
-   const [symbols, setSymbols] = useState<Record<string, any>>({})
-   const [portfolioPerformance, setPortfolioPerformance] = useState<any>(null)
-   const [pnlData, setPnlData] = useState<any[]>([])
-   const [loading, setLoading] = useState(true)
-   const [loadingMore, setLoadingMore] = useState(false)
-   const [hasMoreOrders, setHasMoreOrders] = useState(true)
-   const [ordersOffset, setOrdersOffset] = useState(0)
+    const [dbOrders, setDbOrders] = useState<any[]>([])
+    const [symbols, setSymbols] = useState<Record<string, any>>({})
+    const [portfolioPerformance, setPortfolioPerformance] = useState<any>(null)
+    const [pnlData, setPnlData] = useState<any[]>([])
+    const [loading, setLoading] = useState(true)
+    const [loadingMore, setLoadingMore] = useState(false)
+    const [hasMoreOrders, setHasMoreOrders] = useState(true)
+    const [ordersOffset, setOrdersOffset] = useState(0)
+    const chartRef = useRef<HTMLDivElement>(null)
+    const chartInstance = useRef<IChartApi | null>(null)
+    const seriesInstance = useRef<ISeriesApi<'Line'> | null>(null)
 
   // Load initial data from database (only when tab is visible)
   useEffect(() => {
@@ -52,6 +56,108 @@ export default function History({ isVisible = true }: { isVisible?: boolean }) {
 
     loadInitialData()
   }, [API, isVisible])
+
+  // Initialize chart when pnlData is available
+  useEffect(() => {
+    if (!pnlData.length || !chartRef.current) return
+
+    let chart: IChartApi | null = null
+    let lineSeries: ISeriesApi<'Line'> | null = null
+
+    // Clean up previous chart
+    if (chartInstance.current) {
+      try {
+        chartInstance.current.remove()
+      } catch (e) {
+        // Chart might already be disposed, ignore error
+      }
+      chartInstance.current = null
+      seriesInstance.current = null
+    }
+
+    try {
+      // Create new chart
+      chart = createChart(chartRef.current, {
+        layout: {
+          background: { type: ColorType.Solid, color: 'transparent' },
+          textColor: '#9CA3AF',
+        },
+        grid: {
+          vertLines: { color: '#374151' },
+          horzLines: { color: '#374151' },
+      },
+        width: chartRef.current.clientWidth,
+        height: 250,
+        timeScale: {
+          timeVisible: true,
+          secondsVisible: false,
+        },
+        rightPriceScale: {
+          scaleMargins: {
+            top: 0.1,
+            bottom: 0.1,
+          },
+        },
+        crosshair: {
+          mode: 1, // CrosshairMode.Normal
+        },
+      })
+
+      // Create line series
+      lineSeries = chart.addLineSeries({
+        color: '#10b981',
+        lineWidth: 2,
+        priceFormat: {
+          type: 'price',
+          precision: 0,
+          minMove: 1,
+        },
+      })
+
+      // Convert pnlData to chart format
+      const chartData: LineData[] = pnlData.map((point: any, index: number) => ({
+        time: (Date.now() - (pnlData.length - 1 - index) * 24 * 60 * 60 * 1000) / 1000 as any,
+        value: point.equity,
+      }))
+
+      lineSeries.setData(chartData)
+
+      // Fit content
+      chart.timeScale().fitContent()
+
+      chartInstance.current = chart
+      seriesInstance.current = lineSeries
+    } catch (error) {
+      console.error('Failed to create chart:', error)
+      return
+    }
+
+    // Handle resize
+    const handleResize = () => {
+      if (chartRef.current && chart && !chartInstance.current) {
+        try {
+          chart.applyOptions({ width: chartRef.current.clientWidth })
+        } catch (e) {
+          // Chart might be disposed, ignore
+        }
+      }
+    }
+
+    window.addEventListener('resize', handleResize)
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      if (chart) {
+        try {
+          chart.remove()
+        } catch (e) {
+          // Chart might already be disposed, ignore
+        }
+      }
+      chartInstance.current = null
+      seriesInstance.current = null
+    }
+  }, [pnlData])
 
   // Load initial orders (only when tab is visible and symbols are loaded)
   useEffect(() => {
@@ -137,101 +243,14 @@ export default function History({ isVisible = true }: { isVisible?: boolean }) {
              </div>
 
              <div className="space-y-4">
-               {/* Simple Equity Curve Chart */}
+               {/* Interactive Equity Curve Chart */}
                <div className="bg-slate-900/30 rounded-lg p-4">
                  <h3 className="text-lg font-semibold text-white mb-4">Portfolio Equity Curve</h3>
-                 <div className="h-64 w-full">
-                   <svg viewBox="0 0 400 200" className="w-full h-full">
-                     {/* Grid lines */}
-                     <defs>
-                       <pattern id="grid" width="40" height="20" patternUnits="userSpaceOnUse">
-                         <path d="M 40 0 L 0 0 0 20" fill="none" stroke="#374151" strokeWidth="0.5"/>
-                       </pattern>
-                     </defs>
-                     <rect width="100%" height="100%" fill="url(#grid)" />
-
-                     {/* Equity curve line */}
-                     {pnlData.length > 1 && (
-                       <path
-                         fill="none"
-                         stroke="#10b981"
-                         strokeWidth="2"
-                         d={
-                           (() => {
-                             const vals = pnlData.map((p: any) => p.equity)
-                             const min = Math.min(...vals)
-                             const max = Math.max(...vals)
-                             const pad = 10
-                             const x = (i: number) => pad + (i / (pnlData.length - 1)) * (380 - pad*2)
-                             const y = (v: number) => pad + (1 - (v - min) / (max - min || 1)) * (180 - pad*2)
-                             return pnlData.map((p, i) => `${i===0? 'M':'L'} ${x(i)} ${y(p.equity)}`).join(' ')
-                           })()
-                         }
-                       />
-                     )}
-
-                     {/* X and Y axis labels with actual values */}
-                     {pnlData.length > 1 && (() => {
-                       const vals = pnlData.map((p: any) => p.equity)
-                       const min = Math.min(...vals)
-                       const max = Math.max(...vals)
-                       const range = max - min
-                       const interval = Math.max(5000, Math.round(range / 5 / 1000) * 1000) // Round to nearest 1000
-
-                       // Generate Y-axis labels
-                       const yLabels = []
-                       for (let val = Math.ceil(min / interval) * interval; val <= max; val += interval) {
-                         yLabels.push(val)
-                       }
-
-                       // Generate X-axis date labels (assuming 90 days back)
-                       const now = new Date()
-                       const startDate = new Date(now.getTime() - (pnlData.length - 1) * 24 * 60 * 60 * 1000)
-                       const dateLabels = []
-
-                       // Only show 1st of each month and last date
-                       for (let i = 0; i < pnlData.length; i++) {
-                         const currentDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000)
-                         const day = currentDate.getDate()
-                         const month = currentDate.getMonth()
-
-                         if (day === 1 || i === pnlData.length - 1) {
-                           const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-                           dateLabels.push({
-                             index: i,
-                             label: day === 1 ? `${monthNames[month]}` : `${day} ${monthNames[month]}`
-                           })
-                         }
-                       }
-
-                       return (
-                         <>
-                           {/* Y-axis labels (Equity values) */}
-                           {yLabels.map((val, idx) => {
-                             const yPos = 185 - ((val - min) / (max - min)) * 170
-                             return (
-                               <text key={idx} x="8" y={yPos + 3} textAnchor="end" className="text-[9px] fill-gray-400 font-medium" transform={`rotate(-90, 8, ${yPos + 3})`}>
-                                 ₹{val.toLocaleString('en-IN')}
-                               </text>
-                             )
-                           })}
-
-                           {/* X-axis labels (Dates) */}
-                           {dateLabels.map((dateLabel, idx) => {
-                             const xPos = 10 + (dateLabel.index / (pnlData.length - 1)) * 380
-                             return (
-                               <text key={idx} x={xPos} y="193" textAnchor="middle" className="text-[9px] fill-gray-400 font-medium">
-                                 {dateLabel.label}
-                               </text>
-                             )
-                           })}
-                         </>
-                       )
-                     })()}
-                   </svg>
+                 <div className="w-full">
+                   <div ref={chartRef} className="w-full h-64" />
                  </div>
                  <div className="text-xs text-gray-400 mt-2 text-center">
-                   Equity curve showing portfolio value over time (90 days)
+                   Hover over the chart to see exact values • Equity curve showing portfolio value over time (90 days)
                  </div>
                </div>
 
