@@ -11,10 +11,13 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
     const [loading, setLoading] = useState(true)
     const [refreshing, setRefreshing] = useState(false)
     const [portfolioPerformance, setPortfolioPerformance] = useState<any>(null)
+    const [pnlData, setPnlData] = useState<any[]>([])
     const portfolioRefreshTrigger = useTradingStore(s => s.portfolioRefreshTrigger)
 
-  // Load positions from database on mount and when refresh is triggered
+  // Load positions from database on mount and when refresh is triggered (only when tab is visible)
   useEffect(() => {
+    if (!isVisible) return
+
     const loadPositionsFromDB = async () => {
       try {
         // If this is a refresh (not initial load), show refreshing state
@@ -76,6 +79,17 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
           console.log('⚠️ Could not fetch portfolio performance')
           setPortfolioPerformance(null)
         }
+
+        // Load P&L data for chart
+        const pnlResponse = await fetch(`${API_BASE}/pnl/summary?range_days=90`)
+        if (pnlResponse.ok) {
+          const pnlChartData = (await pnlResponse.json()).equity || []
+          setPnlData(pnlChartData)
+          console.log('✅ Loaded P&L data:', pnlChartData.length, 'points')
+        } else {
+          console.log('⚠️ Could not fetch P&L data')
+          setPnlData([])
+        }
       } catch (error) {
         console.error('Failed to load positions from database:', error)
       } finally {
@@ -85,7 +99,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
     }
 
     loadPositionsFromDB()
-  }, [loading, setPositions, portfolioRefreshTrigger])
+  }, [loading, setPositions, portfolioRefreshTrigger, isVisible])
 
   useEffect(() => {
     if (!isVisible || loading) return // Only fetch prices when Portfolio tab is visible and positions are loaded
@@ -204,28 +218,6 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                  </div>
                </div>
 
-               {/* Additional Performance Stats */}
-               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-slate-700/30">
-                 <div className="text-center">
-                   <div className="text-sm font-semibold text-white">{portfolioPerformance.active_positions || 0}</div>
-                   <div className="text-xs text-gray-400">Active Positions</div>
-                 </div>
-                 <div className="text-center">
-                   <div className="text-sm font-semibold text-white">{portfolioPerformance.total_symbols_traded || 0}</div>
-                   <div className="text-xs text-gray-400">Symbols Traded</div>
-                 </div>
-                 <div className="text-center">
-                   <div className={`text-sm font-semibold ${portfolioPerformance.total_realized_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                     {portfolioPerformance.total_realized_pnl >= 0 ? '+' : ''}₹{(portfolioPerformance.total_realized_pnl || 0).toLocaleString('en-IN')}
-                   </div>
-                   <div className="text-xs text-gray-400">Realized P&L</div>
-                 </div>
-                 <div className="text-center">
-                   <div className="text-xs text-gray-500">
-                     Updated: {portfolioPerformance.last_updated ? new Date(portfolioPerformance.last_updated).toLocaleTimeString() : 'Never'}
-                   </div>
-                 </div>
-               </div>
              </div>
            )}
 

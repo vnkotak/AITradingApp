@@ -308,11 +308,38 @@ def place_order(req: OrderRequest):
 
 
 @router.get("/orders")
-def list_orders(ticker: str | None = None, exchange: Literal['NSE','BSE'] | None = None):
+def list_orders(ticker: str | None = None, exchange: Literal['NSE','BSE'] | None = None, limit: int = 50, offset: int = 0):
     sb = get_client()
-    q = sb.table("orders").select("*, symbols:ticker")
-    # Simplified: return latest 50
-    return sb.table("orders").select("id,ts,side,type,price,qty,status,slippage_bps,simulator_notes").order("ts", desc=True).limit(50).execute().data
+    # Get orders with symbol information, with pagination
+    query = sb.table("orders").select("id,ts,side,type,price,qty,status,slippage_bps,simulator_notes,symbol_id").order("ts", desc=True)
+
+    # Apply pagination
+    if limit > 0:
+        query = query.limit(limit)
+    if offset > 0:
+        query = query.range(offset, offset + limit - 1)
+
+    orders = query.execute().data or []
+
+    # Attach symbol information to each order
+    orders_with_symbols = []
+    for order in orders:
+        if order.get("symbol_id"):
+            try:
+                symbol_info = sb.table("symbols").select("ticker,exchange").eq("id", order["symbol_id"]).single().execute().data
+                if symbol_info:
+                    order["ticker"] = symbol_info["ticker"]
+                    order["exchange"] = symbol_info["exchange"]
+                    order.pop("symbol_id", None)  # Remove symbol_id from response
+                    orders_with_symbols.append(order)
+            except:
+                # If symbol lookup fails, still include the order
+                order.pop("symbol_id", None)
+                orders_with_symbols.append(order)
+        else:
+            orders_with_symbols.append(order)
+
+    return orders_with_symbols
 
 
 @router.get("/positions")

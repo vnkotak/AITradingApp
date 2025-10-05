@@ -6,7 +6,6 @@ import Trading from '../components/Trading'
 import Portfolio from '../components/Portfolio'
 import History from '../components/History'
 import Header from '../components/Header'
-import Analytics from '../components/Analytics'
 import SignalsTab from '../components/SignalsTab'
 import { ThemeProvider } from '../components/ThemeProvider'
 
@@ -114,7 +113,6 @@ export default function Home() {
       </div>
       <div style={{ display: activeTab === 'History' ? 'block' : 'none' }}>
         <History />
-        <Analytics />
       </div>
     </div>
   </ThemeProvider>
