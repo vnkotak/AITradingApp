@@ -77,7 +77,7 @@ jobs:
           echo "market_open=true" >> $GITHUB_OUTPUT
 
       - name: Execute Trades
-        if: steps.market-check.outputs.market_open == 'true' && inputs.dry_run == 'true'
+        if: steps.market-check.outputs.market_open == 'true' || github.event.inputs.dry_run == true
         run: |
           # Set default values
           TIMEFRAMES="${{ github.event.inputs.timeframes || '1m,5m,15m,1h,1d' }}"
