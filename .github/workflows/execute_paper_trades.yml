@@ -10,7 +10,7 @@ on:
       timeframes:
         description: 'Timeframes to execute trades for (comma-separated)'
         required: true
-        default: '1m,5m,15m'
+        default: '1m,5m,15m,1h,1d'
         type: string
       confidence:
         description: 'Minimum confidence threshold'
