@@ -27,19 +27,6 @@ jobs:
   execute-trades:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.8'
-
-      - name: Install dependencies
-        run: |
-          cd apps/api
-          pip install -r requirements.txt
-
       - name: Check market hours and holidays
         id: market-check
         run: |
@@ -109,21 +96,16 @@ jobs:
           echo "Confidence threshold: $CONFIDENCE"
           echo "Dry run: $DRY_RUN"
 
-          # Set Python path for imports
-          export PYTHONPATH=$PWD:$PYTHONPATH
+          # Call the auto-execute API endpoint
+          echo "=== Calling Auto-Execute API ==="
+          echo "Timeframes: $TIMEFRAMES"
+          echo "Confidence: $CONFIDENCE"
+          echo "Dry Run: $DRY_RUN"
 
-          # Split timeframes and execute for each
-          IFS=',' read -ra TF_ARRAY <<< "$TIMEFRAMES"
-          for TF in "${TF_ARRAY[@]}"; do
-            TF=$(echo "$TF" | xargs)  # Trim whitespace
-            echo "=== Processing timeframe: $TF ==="
+          # Use curl to call the API (like scanner workflows)
+          API_RESPONSE=$(curl -sS -X POST "https://aitradingapp.onrender.com/auto-execute/run?timeframes=$TIMEFRAMES&confidence_threshold=$CONFIDENCE&dry_run=$DRY_RUN")
 
-            if [ "$DRY_RUN" = "true" ]; then
-              python apps/api/auto_execute_signals.py --tf "$TF" --confidence "$CONFIDENCE" --dry-run
-            else
-              python apps/api/auto_execute_signals.py --tf "$TF" --confidence "$CONFIDENCE"
-            fi
+          echo "API Response:"
+          echo "$API_RESPONSE"
 
-            echo "Completed processing for $TF"
-            echo ""
-          done
+          echo "Completed auto-execution"
