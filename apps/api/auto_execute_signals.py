@@ -22,6 +22,7 @@ import pytz
 from apps.api.supabase_client import get_client
 from apps.api.execution import simulate_order, apply_trade_updates
 from apps.api.risk_engine import get_limits, suggest_position_size, should_block_order
+from apps.api.trade_execution import TradeExecutor
 import requests
 
 # Configure logging
@@ -35,6 +36,11 @@ class AutoExecutor:
     def __init__(self, api_base_url: str = "http://localhost:8000"):
         self.api_base_url = api_base_url
         self.sb = get_client()
+        # Use common trade execution logic with all features enabled
+        self.trade_executor = TradeExecutor(
+            enable_advanced_exits=True,
+            enable_timeframe_precedence=True
+        )
 
     def is_market_open(self) -> bool:
         """Check if Indian markets are currently open"""
@@ -104,6 +110,81 @@ class AutoExecutor:
             logger.error(f"Error checking recent orders for {symbol_id}: {e}")
             return False
 
+    def get_position_timeframe(self, symbol_id: str) -> str | None:
+        """Get the timeframe that opened the current position"""
+        try:
+            # Look for the most recent BUY order for this position
+            recent_buy = self.sb.table("orders").select("created_at, simulator_notes").eq("symbol_id", symbol_id).eq("side", "BUY").eq("status", "FILLED").order("created_at", desc=True).limit(1).execute().data
+            if recent_buy and recent_buy[0].get("simulator_notes"):
+                notes = recent_buy[0]["simulator_notes"]
+                # Check if notes contain timeframe info (we'll add this)
+                if isinstance(notes, dict) and "timeframe" in notes:
+                    return notes["timeframe"]
+        except Exception as e:
+            logger.warning(f"Error getting position timeframe for {symbol_id}: {e}")
+        return None
+
+    def should_override_signal(self, signal: Dict) -> bool:
+        """Check if this signal should override existing position logic using common trade executor"""
+        symbol_id = signal['symbol_id']
+        ticker = signal['ticker']
+
+        # Get current position and timeframe context
+        position = self.get_current_position(symbol_id)
+        position_timeframe = self.get_position_timeframe(symbol_id) if position else None
+
+        # Get technical context for advanced exits
+        context = None
+        if position and position['qty'] > 0:
+            context = self._get_technical_context(symbol_id, ticker, signal.get('exchange', 'NSE'),
+                                                position['avg_price'], position['avg_price'])
+
+        # Use common trade executor logic
+        should_execute, reason = self.trade_executor.should_execute_signal(
+            signal=signal,
+            current_position=position,
+            position_timeframe=position_timeframe,
+            context=context
+        )
+
+        if not should_execute:
+            logger.info(f"⏭️ {ticker}: Signal ignored - {reason}")
+
+        return should_execute
+
+    def _get_current_price(self, symbol_id: str, ticker: str, exchange: str) -> float | None:
+        """Get current price for a symbol"""
+        try:
+            sb = get_client()
+            latest = sb.table("candles").select("close").eq("symbol_id", symbol_id).eq("timeframe", "1m").order("ts", desc=True).limit(1).execute().data
+            return float(latest[0]['close']) if latest else None
+        except Exception as e:
+            logger.warning(f"Error getting current price for {ticker}: {e}")
+            return None
+
+    def _execute_market_exit(self, symbol_id: str, ticker: str, exchange: str, side: str, qty: float):
+        """Execute a market exit order"""
+        try:
+            order_payload = {
+                "ticker": ticker,
+                "exchange": exchange,
+                "side": side,
+                "type": "MARKET",
+                "price": None,
+                "qty": qty,
+                "simulator_notes": {
+                    "exit_reason": "profit_target_or_stop",
+                    "timeframe": "auto"
+                }
+            }
+
+            response = requests.post(f"{self.api_base_url}/orders", json=order_payload)
+            response.raise_for_status()
+            order_result = response.json()
+            logger.info(f"✅ Auto-exit executed: {side} {qty} {ticker} @ MARKET")
+        except Exception as e:
+            logger.error(f"❌ Failed to execute auto-exit for {ticker}: {e}")
+
     def execute_signal(self, signal: Dict) -> bool:
         """Execute a trading signal (paper trading)"""
         symbol_id = signal['symbol_id']
@@ -111,6 +192,10 @@ class AutoExecutor:
         exchange = signal['exchange']
         action = signal['action']
         entry_price = signal['entry']
+
+        # Check timeframe precedence and position override logic
+        if not self.should_override_signal(signal):
+            return False
 
         # Check if we already executed this signal recently
         if self.has_recent_order(symbol_id, action, minutes_back=10):
@@ -134,15 +219,19 @@ class AutoExecutor:
         if action == 'BUY':
             # Buy if no position or short position
             if not position or position['qty'] <= 0:
-                # Calculate position size
-                limits = get_limits()
-                available_capital = limits.get('max_position_value', 10000)  # Default 10k
+                # Calculate position size (timeframe-aware)
                 if position and position['qty'] < 0:
                     # Covering short - size based on existing short
                     order_qty = abs(position['qty'])
                 else:
-                    # New long position
-                    order_qty = suggest_position_size(ticker, exchange, entry_price)
+                    # New long position - use common trade executor for sizing
+                    order_qty = self.trade_executor.calculate_position_size(
+                        action='BUY',
+                        symbol=ticker,
+                        entry_price=entry_price,
+                        timeframe=timeframe,
+                        risk_limits=get_limits()
+                    )
 
                 if order_qty > 0:
                     should_execute = True
@@ -173,12 +262,19 @@ class AutoExecutor:
                     "qty": order_qty
                 }
 
+                # Add timeframe info to order for tracking
+                order_payload["simulator_notes"] = {
+                    "timeframe": signal['timeframe'],
+                    "signal_id": signal['id'],
+                    "strategy": signal.get('strategy', 'unknown')
+                }
+
                 # Call the orders API
                 response = requests.post(f"{self.api_base_url}/orders", json=order_payload)
                 response.raise_for_status()
 
                 order_result = response.json()
-                logger.info(f"✅ Executed {order_side} order for {order_qty} {ticker} at {entry_price}: {order_result}")
+                logger.info(f"✅ Executed {order_side} order for {order_qty} {ticker} at {entry_price} ({signal['timeframe']} timeframe): {order_result}")
 
                 return True
 
@@ -192,7 +288,6 @@ class AutoExecutor:
     def run_execution_cycle(self, timeframe: str, confidence_threshold: float = 0.7, dry_run: bool = False, minutes_back: int = 15):
         """Run one execution cycle"""
         logger.info(f"Starting auto-execution cycle for {timeframe} timeframe (confidence >= {confidence_threshold})")
-        logger.info(dry_run);
         if dry_run:
             logger.info("DRY RUN MODE - No orders will be placed - bypassing time filters for testing")
 
@@ -200,10 +295,16 @@ class AutoExecutor:
             logger.info("Market is closed, skipping execution")
             return {"executed": 0, "skipped": 0, "errors": 0}
 
-        # Get recent signals (15 minutes by default, or longer for dry runs)
+        # FIRST: Run profit-taking and risk management (independent of signals)
+        if not dry_run:
+            self._run_profit_taking_cycle()
+        else:
+            logger.info("DRY RUN: Skipping profit-taking cycle")
+
+        # SECOND: Process signals
         hours_back = minutes_back/60.0 if not dry_run else 24.0  # 24 hours for dry run testing
         signals = self.get_recent_signals(timeframe, confidence_threshold, hours_back=hours_back)
-        logger.info(signals);
+
         executed = 0
         skipped = 0
         errors = 0
@@ -229,6 +330,75 @@ class AutoExecutor:
             "errors": errors,
             "signals_processed": len(signals)
         }
+
+    def _run_profit_taking_cycle(self):
+        """Run independent profit-taking cycle for all positions using common trade executor"""
+        logger.info("🔄 Running profit-taking cycle for all positions...")
+
+        try:
+            # Get all current positions
+            sb = get_client()
+            positions = sb.table("positions").select("symbol_id,avg_price,qty").execute().data or []
+
+            profit_exits = 0
+            stop_exits = 0
+
+            for position in positions:
+                if position['qty'] <= 0:
+                    continue  # Skip if no long position
+
+                symbol_id = position['symbol_id']
+                qty = position['qty']
+                entry_price = position['avg_price']
+
+                # Get symbol info
+                try:
+                    symbol_info = sb.table("symbols").select("ticker,exchange").eq("id", symbol_id).single().execute().data
+                    if not symbol_info:
+                        continue
+                    ticker = symbol_info['ticker']
+                    exchange = symbol_info['exchange']
+                except Exception:
+                    continue
+
+                # Get current price
+                current_price = self._get_current_price(symbol_id, ticker, exchange)
+                if not current_price:
+                    continue
+
+                # Calculate P&L and get technical context using common logic
+                pnl_pct = (current_price - entry_price) / entry_price * 100
+
+                # Get technical indicators using common trade executor
+                technical_context = self.trade_executor.get_technical_context(
+                    symbol_id, ticker, exchange, entry_price, current_price, sb
+                )
+
+                # Use common trade executor exit logic
+                should_exit_profit = self.trade_executor._should_exit_for_profit(pnl_pct, technical_context)
+                should_exit_loss = self.trade_executor._should_exit_for_loss(pnl_pct, technical_context)
+
+                if should_exit_profit:
+                    logger.info(f"🎯 {ticker}: Profit exit triggered ({pnl_pct:.1f}%) - smart exit logic")
+                    self._execute_market_exit(symbol_id, ticker, exchange, 'SELL', qty)
+                    profit_exits += 1
+
+                elif should_exit_loss:
+                    logger.info(f"🛑 {ticker}: Risk exit triggered ({pnl_pct:.1f}%) - smart exit logic")
+                    self._execute_market_exit(symbol_id, ticker, exchange, 'SELL', qty)
+                    stop_exits += 1
+
+            # Apply trailing stops
+            from apps.api.risk_engine import apply_trailing_stops
+            trailing_exits = apply_trailing_stops()
+
+            total_exits = profit_exits + stop_exits + trailing_exits
+            if total_exits > 0:
+                logger.info(f"💰 Profit-taking cycle: {profit_exits} profit exits, {stop_exits} stop exits, {trailing_exits} trailing stops")
+
+        except Exception as e:
+            logger.error(f"Error in profit-taking cycle: {e}")
+
 
 def main():
     parser = argparse.ArgumentParser(description='Auto-execute trading signals for paper trading')

@@ -1,0 +1,64 @@
+name: Scan 1h
+
+on:
+  schedule:
+    # Market hours: 9:15 AM - 3:30 PM IST = 3:45 AM - 10:00 AM UTC (Monday-Friday)
+    # Run hourly at :45 past the hour during market hours
+    - cron: '45 3-9 * * 1-5'  # 3:45, 4:45, 5:45, 6:45, 7:45, 8:45, 9:45 UTC (Mon-Fri)
+  workflow_dispatch:
+
+jobs:
+  run-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check market hours and holidays
+        id: market-check
+        run: |
+          # Get current UTC time
+          UTC_HOUR=$(date -u +%H)
+          UTC_MIN=$(date -u +%M)
+          DAY_OF_WEEK=$(date -u +%u)  # 1=Monday, 7=Sunday
+
+          # Convert to IST (UTC + 5:30)
+          IST_HOUR=$(( (UTC_HOUR + 5) % 24 ))
+          IST_MIN=$(( UTC_MIN + 30 ))
+
+          # Handle minute overflow
+          if [ $IST_MIN -ge 60 ]; then
+            IST_MIN=$(( IST_MIN - 60 ))
+            IST_HOUR=$(( (IST_HOUR + 1) % 24 ))
+          fi
+
+          echo "Current UTC: $(date -u +'%Y-%m-%d %H:%M:%S')"
+          echo "Current IST: $(printf "%02d:%02d" $IST_HOUR $IST_MIN)"
+          echo "Day of week: $DAY_OF_WEEK (1=Monday, 7=Sunday)"
+
+          # Check if it's a weekday (1-5 = Monday-Friday)
+          if [ "$DAY_OF_WEEK" -lt 1 ] || [ "$DAY_OF_WEEK" -gt 5 ]; then
+            echo "⚠️ Weekend detected. Skipping scan."
+            echo "market_open=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # For 1h timeframe, we run hourly scans, so check if we're close to market close
+          # Don't run if it's after 2:30 PM IST (to avoid incomplete hourly bars)
+          if [ "$IST_HOUR" -gt 14 ] || ([ "$IST_HOUR" -eq 14 ] && [ "$IST_MIN" -gt 30 ]); then
+            echo "⚠️ Too close to market close for hourly scan. Skipping."
+            echo "market_open=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check if within extended market hours for hourly data (start from 10 AM IST)
+          if [ "$IST_HOUR" -lt 10 ] || [ "$IST_HOUR" -gt 15 ]; then
+            echo "⚠️ Outside optimal hours for hourly scan (10 AM - 3 PM IST). Skipping."
+            echo "market_open=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "✅ Optimal time for hourly scan. Proceeding."
+          echo "market_open=true" >> $GITHUB_OUTPUT
+
+      - name: Call scanner 1h
+        if: steps.market-check.outputs.market_open == 'true'
+        run: |
+          curl -sS -X POST "https://aitradingapp.onrender.com/scanner/run?mode=1h"

@@ -1,0 +1,38 @@
+name: Scan 1d
+
+on:
+  schedule:
+    # Run daily after market close: 3:30 PM IST = 10:00 AM UTC (Monday-Friday)
+    - cron: '0 10 * * 1-5'  # 10:00 AM UTC (Mon-Fri) = 3:30 PM IST previous day
+  workflow_dispatch:
+
+jobs:
+  run-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if it's a weekday
+        id: weekday-check
+        run: |
+          # Get current UTC time
+          UTC_HOUR=$(date -u +%H)
+          UTC_MIN=$(date -u +%M)
+          DAY_OF_WEEK=$(date -u +%u)  # 1=Monday, 7=Sunday
+
+          echo "Current UTC: $(date -u +'%Y-%m-%d %H:%M:%S')"
+          echo "Day of week: $DAY_OF_WEEK (1=Monday, 7=Sunday)"
+
+          # Check if it's a weekday (1-5 = Monday-Friday)
+          if [ "$DAY_OF_WEEK" -lt 1 ] || [ "$DAY_OF_WEEK" -gt 5 ]; then
+            echo "⚠️ Weekend detected. Skipping daily scan."
+            echo "is_weekday=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "✅ Weekday detected. Proceeding with daily scan."
+          echo "is_weekday=true" >> $GITHUB_OUTPUT
+
+      - name: Call scanner 1d
+        if: steps.weekday-check.outputs.is_weekday == 'true'
+        run: |
+          echo "Running daily scan after market close..."
+          curl -sS -X POST "https://aitradingapp.onrender.com/scanner/run?mode=1d"

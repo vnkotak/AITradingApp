@@ -81,7 +81,7 @@ def circuit_breaker_triggered(ticker: str, exchange: str, threshold_pct: float) 
     return change_pct >= threshold_pct
 
 
-def suggest_position_size(ticker: str, exchange: str, price: float, atr: float | None, sector: str | None, limits: RiskLimitsCfg | None = None) -> float:
+def suggest_position_size(ticker: str, exchange: str, price: float, atr: float | None = None, sector: str | None = None, timeframe: str = '1m', limits: RiskLimitsCfg | None = None) -> float:
     print(f"🔍 [RISK_ENGINE] suggest_position_size called for {ticker}.{exchange}, price={price}")
     start_time = time.time()
 
@@ -89,10 +89,23 @@ def suggest_position_size(ticker: str, exchange: str, price: float, atr: float |
         print(f"⚠️ [RISK_ENGINE] Invalid price: {price}, returning 1.0")
         return 1.0
 
-    # Primary logic: Suggest quantity for ~₹10,000 trade value
-    target_value = 10000.0
+    # Primary logic: Adjust target trade value based on timeframe
+    base_target_value = 10000.0
+
+    # Timeframe-based position sizing multipliers
+    timeframe_multipliers = {
+        '1m': 0.3,   # 30% of base - very conservative for fast timeframe
+        '5m': 0.5,   # 50% of base - moderate for 5min
+        '15m': 0.8,  # 80% of base - higher for 15min
+        '1h': 1.0,   # 100% of base - full size for hourly
+        '1d': 1.2    # 120% of base - largest for daily
+    }
+
+    multiplier = timeframe_multipliers.get(timeframe, 0.5)  # Default to 50% if unknown
+    target_value = base_target_value * multiplier
+
     suggested_qty = target_value / price
-    print(f"💰 [RISK_ENGINE] Target value: ₹{target_value}, calculated qty: {suggested_qty}")
+    print(f"💰 [RISK_ENGINE] Timeframe: {timeframe}, multiplier: {multiplier}, target value: ₹{target_value}, calculated qty: {suggested_qty}")
 
     # Round to reasonable precision (max 4 decimal places for low-priced stocks)
     if suggested_qty >= 100:

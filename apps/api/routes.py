@@ -364,6 +364,13 @@ def pnl(range_days: int = 90):
     return pnl_summary(range_days)
 
 
+@router.get("/portfolio/performance")
+def get_portfolio_performance_endpoint():
+    """Get comprehensive portfolio performance with realized and unrealized P&L"""
+    from apps.api.analytics import get_portfolio_performance
+    return get_portfolio_performance()
+
+
 @router.get("/debug/scanner")
 def debug_scanner():
     sb = get_client()

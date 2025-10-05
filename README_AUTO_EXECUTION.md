@@ -12,8 +12,10 @@ The system consists of:
 ## Architecture
 
 ### Files
-- `apps/api/auto_execute_signals.py` - Main execution script
-- `apps/api/routes.py` - API endpoint for manual triggering
+- `apps/api/trade_execution.py` - Common trade execution logic
+- `apps/api/auto_execute_signals.py` - Live execution using common logic
+- `ml/execute_backtest_trades.py` - Backtest execution using common logic
+- `apps/api/routes.py` - API endpoints
 - `.github/workflows/execute_paper_trades.yml` - Scheduled automation
 
 ### Components
@@ -57,18 +59,55 @@ The `execute_paper_trades.yml` workflow runs automatically:
 ## Execution Logic
 
 ### Signal Processing
-1. Fetches signals with confidence > threshold for specified timeframe(s)
+1. **Independent Profit-Taking Cycle**: Runs first, checks all positions for profit targets (5%), stop losses (2%), and trailing stops
+2. Fetches signals with confidence > threshold for specified timeframe(s)
    - Normal mode: signals from last 15 minutes
    - Dry run mode: signals from last 24 hours (for testing)
-2. Supports multiple timeframes: 1m, 5m, 15m, 1h, 1d
-3. Checks for recent orders to prevent duplicate execution
-4. Checks current positions for each symbol
+3. Supports multiple timeframes: **1m, 5m, 15m, 1h, 1d** (all with scan workflows)
+4. **Multi-timeframe signal precedence**: Longer timeframes override shorter ones
+5. **Timeframe-aware risk management**: Different position sizes per timeframe
+6. Checks for recent orders to prevent duplicate execution
+7. Checks current positions for each symbol
+
+### Multi-Timeframe Signal Precedence
+**Timeframe Hierarchy**: 1m (1) < 5m (2) < 15m (3) < 1h (4) < 1d (5)
+
+- **BUY Signals**: Higher timeframe BUY can override/add to lower timeframe positions
+- **SELL Signals**: Balanced approach allowing critical exits
+  - Same/higher timeframe SELL signals always execute
+  - Close timeframe SELL (1 level down) always execute
+  - Lower timeframe SELL needs confidence: 80%+ (1 level), 85%+ (2 levels), 90%+ (3 levels)
+  - 95%+ confidence overrides ALL timeframe restrictions (critical exits)
+- **Position Tracking**: Orders store timeframe info to track position origins
+- **Override Logic**: Balances trend following with risk management
+
+### Risk Management by Timeframe
+- **1m**: 30% of base position size (₹3,000 trades) - High frequency, tight risk
+- **5m**: 50% of base position size (₹5,000 trades) - Moderate risk
+- **15m**: 80% of base position size (₹8,000 trades) - Higher tolerance
+- **1h**: 100% of base position size (₹10,000 trades) - Full position
+- **1d**: 120% of base position size (₹12,000 trades) - Largest positions
 
 ### Trade Execution Rules
 - **BUY Signal**: Execute if no position exists or currently short
 - **SELL Signal**: Execute if long position exists
+- **Smart Profit Taking**: Context-aware exits considering trend, RSI, and momentum
+- **Intelligent Stop Loss**: Avoids exiting on normal pullbacks in strong trends
+- **Trailing Stops**: Dynamic stops that lock in profits as price moves favorably
 - Uses limit orders at signal entry price
 - Applies position sizing based on risk management
+
+### Advanced Exit Logic
+**Profit Taking:**
+- Always exit at 10%+ gains
+- Exit at 5% gains unless strong bullish momentum continues
+- Consider trend direction and RSI levels
+
+**Risk Management:**
+- Always exit at 5%+ losses
+- Exit at 2% losses unless trend remains bullish with RSI > 30
+- Allow normal pullbacks in established trends
+- Consider support levels and recent price action
 
 ### Risk Controls
 - Respects existing risk limits (`get_limits()`)
@@ -109,7 +148,8 @@ INFO - ✅ Executed BUY order for 10 RELIANCE at 2450.0 (conf: 0.85)
 2. **Dry Run Mode** - Test execution without placing orders, bypasses time filters
 3. **Risk Limits** - Respects position size and capital limits
 4. **Order-Based Deduplication** - Checks recent orders to prevent re-processing signals
-5. **Position Validation** - Only executes if position logic allows (no conflicting trades)
+5. **Multi-Timeframe Precedence** - Longer timeframes can override shorter timeframe signals
+6. **Position Validation** - Only executes if position logic allows (no conflicting trades)
 6. **Error Handling** - Comprehensive logging and error recovery
 
 ## Testing
