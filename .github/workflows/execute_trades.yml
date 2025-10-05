@@ -1,4 +1,4 @@
-name: Execute Paper Trades
+name: Execute Trades
 
 on:
   schedule:
@@ -76,15 +76,15 @@ jobs:
           echo "✅ Market is open. Proceeding with trade execution."
           echo "market_open=true" >> $GITHUB_OUTPUT
 
-      - name: Execute Paper Trades
-        if: steps.market-check.outputs.market_open == 'true'
+      - name: Execute Trades
+        if: steps.market-check.outputs.market_open == 'true' && inputs.dry_run == 'true'
         run: |
           # Set default values
           TIMEFRAMES="${{ github.event.inputs.timeframes || '1m,5m,15m,1h,1d' }}"
           CONFIDENCE="${{ github.event.inputs.confidence || '0.7' }}"
           DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
 
-          echo "Executing paper trades for timeframes: $TIMEFRAMES"
+          echo "Executing trades for timeframes: $TIMEFRAMES"
           echo "Confidence threshold: $CONFIDENCE"
           echo "Dry run: $DRY_RUN"
 
