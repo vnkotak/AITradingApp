@@ -13,12 +13,12 @@ const API = process.env.NEXT_PUBLIC_API_BASE
 
 
 export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
-      const [symbol, setSymbol] = useState({ ticker: 'HDFCBANK', exchange: 'NSE' as 'NSE'|'BSE' })
-      const [availableSymbols, setAvailableSymbols] = useState<any[]>([])
-      const [symbolsLoading, setSymbolsLoading] = useState(true) // Start as loading
-      const [apiConnected, setApiConnected] = useState<boolean>(false)
-      const [tf, setTf] = useState<Timeframe>('1m')
-      const [candles, setCandles] = useState<Candle[]|null>(null)
+       const [symbol, setSymbol] = useState({ ticker: 'HDFCBANK', exchange: 'NSE' as 'NSE'|'BSE' })
+       const [availableSymbols, setAvailableSymbols] = useState<any[]>([])
+       const [symbolsLoading, setSymbolsLoading] = useState(true) // Start as loading
+       const [apiConnected, setApiConnected] = useState<boolean>(false)
+       const [tf, setTf] = useState<Timeframe>('1m')
+       const [candles, setCandles] = useState<Candle[]|null>(null)
   
       // Load cached symbols immediately on mount
       useEffect(() => {
@@ -40,7 +40,7 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
         }
       }, []) // Run only once on mount
 
-      // Check API connectivity only when component is visible
+      // Check API connectivity and pause status only when component is visible
       useEffect(() => {
         if (!isVisible) return
 
@@ -64,10 +64,10 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
 
         checkApiConnection()
 
-        // Check connection every 2 minutes (less frequent)
-        const interval = setInterval(checkApiConnection, 120000)
+        // Check connection every 2 minutes
+        const apiInterval = setInterval(checkApiConnection, 120000)
 
-        return () => clearInterval(interval)
+        return () => clearInterval(apiInterval)
       }, [API, isVisible])
   
       // Load available symbols only when component is visible and we don't have them cached
@@ -154,51 +154,67 @@ export default function Trading({ isVisible = true }: { isVisible?: boolean }) {
    const currentPosition = positions[currentPositionKey]
    const ownedQuantity = currentPosition?.qty || 0
 
-   // Load positions if not already loaded
+   // Load positions if not already loaded - only on mount and when tab becomes visible
+   // Also periodically refresh positions every 30 seconds when visible
    useEffect(() => {
-     const loadPositionsIfNeeded = async () => {
-       // If we have no positions, try to load from database
-       if (Object.keys(positions).length === 0) {
-         try {
-           const API_BASE = process.env.NEXT_PUBLIC_API_BASE
-           if (!API_BASE) return
+     if (!isVisible) return
 
-           console.log('Trading: Loading positions from database...')
-           const response = await fetch(`${API_BASE}/positions`)
-           if (response.ok) {
-             const dbPositions = await response.json()
-             console.log('Trading: Raw positions from database:', dbPositions)
+     let mounted = true
 
-             // Convert database positions to local store format
-             const positionsMap: Record<string, any> = {}
-             for (const pos of dbPositions) {
-               if (pos.ticker && pos.exchange && pos.qty !== 0) {
-                 const key = `${pos.ticker}.${pos.exchange}`
-                 positionsMap[key] = {
-                   ticker: pos.ticker,
-                   exchange: pos.exchange,
-                   qty: pos.qty,
-                   avgPrice: pos.avg_price
-                 }
+     const loadPositions = async (isInitialLoad = false) => {
+       try {
+         const API_BASE = process.env.NEXT_PUBLIC_API_BASE
+         if (!API_BASE) return
+
+         if (isInitialLoad) {
+           console.log('Trading: Initial load - loading positions from database...')
+         }
+
+         const response = await fetch(`${API_BASE}/positions`)
+         if (response.ok) {
+           const dbPositions = await response.json()
+
+           if (!mounted) return
+
+           // Convert database positions to local store format
+           const positionsMap: Record<string, any> = {}
+           for (const pos of dbPositions) {
+             if (pos.ticker && pos.exchange && pos.qty !== 0) {
+               const key = `${pos.ticker}.${pos.exchange}`
+               positionsMap[key] = {
+                 ticker: pos.ticker,
+                 exchange: pos.exchange,
+                 qty: pos.qty,
+                 avgPrice: pos.avg_price
                }
              }
-
-             if (Object.keys(positionsMap).length > 0) {
-               setPositions(positionsMap)
-               console.log('Trading: Successfully loaded positions:', positionsMap)
-             } else {
-               setPositions({})
-               console.log('Trading: No positions found, clearing store')
-             }
            }
-         } catch (error) {
+
+           setPositions(positionsMap)
+           if (isInitialLoad) {
+             console.log('Trading: Successfully loaded positions:', positionsMap)
+           }
+         }
+       } catch (error) {
+         if (mounted) {
            console.error('Trading: Failed to load positions:', error)
          }
        }
      }
 
-     loadPositionsIfNeeded()
-   }, [positions, setPositions])
+     // Initial load
+     loadPositions(true)
+
+     // Set up periodic refresh every 30 seconds
+     const interval = setInterval(() => {
+       loadPositions(false)
+     }, 30000)
+
+     return () => {
+       mounted = false
+       clearInterval(interval)
+     }
+   }, [isVisible]) // Only depend on visibility
 
    const markPrice = useTradingStore(s => s.markPrice)
 

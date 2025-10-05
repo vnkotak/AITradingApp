@@ -18,7 +18,6 @@ class RiskLimitsCfg:
     max_sector_exposure_pct: float
     circuit_breaker_pct: float
     kelly_fraction: float
-    pause_all: bool
 
 
 def get_limits() -> RiskLimitsCfg:
@@ -26,7 +25,7 @@ def get_limits() -> RiskLimitsCfg:
     row = sb.table("risk_limits").select("* ").limit(1).execute().data
     if not row:
         # Defaults
-        return RiskLimitsCfg(5, 3, 15, 25, 20, 0.5, False)
+        return RiskLimitsCfg(5, 3, 15, 25, 20, 0.5)
     r = row[0]
     return RiskLimitsCfg(
         float(r.get("max_capital_per_trade_pct", 5)),
@@ -35,7 +34,6 @@ def get_limits() -> RiskLimitsCfg:
         float(r.get("max_sector_exposure_pct", 25)),
         float(r.get("circuit_breaker_pct", 20)),
         float(r.get("kelly_fraction", 0.5)),
-        bool(r.get("pause_all", False)),
     )
 
 
@@ -179,8 +177,6 @@ def daily_drawdown_exceeded(limits: RiskLimitsCfg | None = None) -> bool:
 
 def should_block_order(ticker: str, exchange: str, side: Literal['BUY','SELL']) -> Tuple[bool, str | None]:
     limits = get_limits()
-    if limits.pause_all:
-        return True, "Trading paused"
     if daily_drawdown_exceeded(limits):
         return True, "Daily drawdown limit exceeded"
     if circuit_breaker_triggered(ticker, exchange, limits.circuit_breaker_pct):

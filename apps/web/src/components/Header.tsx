@@ -2,15 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import axios from 'axios'
-import PauseToggle from './PauseToggle'
 
 const API = process.env.NEXT_PUBLIC_API_BASE
 
 export default function Header() {
-  const [apiStatus, setApiStatus] = useState<boolean | null>(null)
-  const [dbStatus, setDbStatus] = useState<boolean | null>(null)
-  const [marketStatus, setMarketStatus] = useState<string>('CLOSED')
-  const [refreshRate, setRefreshRate] = useState<string>('OFF')
+   const [apiStatus, setApiStatus] = useState<boolean | null>(null)
+   const [marketStatus, setMarketStatus] = useState<string>('CLOSED')
+   const [refreshRate, setRefreshRate] = useState<string>('OFF')
 
   useEffect(() => {
     let mounted = true
@@ -32,12 +30,10 @@ export default function Header() {
         const response = await axios.get(`${API}/home/system-status`)
         if (!mounted) return
         const status = response.data
-        setDbStatus(status.database_status === 'Connected')
         setMarketStatus(status.market_status || 'CLOSED')
         setRefreshRate(status.market_status === 'CLOSED' ? 'OFF' : status.refresh_rate || '10s')
       } catch (error) {
         console.error('Failed to fetch system status:', error)
-        setDbStatus(false)
         setRefreshRate('OFF')
       }
     }
@@ -97,16 +93,6 @@ export default function Header() {
             </div>
           </div>
 
-          {/* Database Status */}
-          <div className="flex items-center gap-1 sm:gap-2">
-            <div className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full ${getStatusColor(dbStatus)}`}></div>
-            <div className="text-xs sm:text-sm">
-              <span className="text-gray-400">DB:</span>
-              <span className={`ml-1 font-medium ${dbStatus ? 'text-blue-400' : dbStatus === false ? 'text-red-400' : 'text-gray-500'}`}>
-                {dbStatus === null ? '...' : dbStatus ? 'OK' : 'ERR'}
-              </span>
-            </div>
-          </div>
 
           {/* Market Status & Refresh */}
           <div className="flex items-center gap-1 sm:gap-2">
@@ -128,14 +114,9 @@ export default function Header() {
         {/* Tablet/Mobile: Collapsed Status Indicators */}
         <div className="flex md:hidden items-center gap-1">
           <div className={`w-2 h-2 rounded-full ${getStatusColor(apiStatus)}`} title="API Status"></div>
-          <div className={`w-2 h-2 rounded-full ${getStatusColor(dbStatus)}`} title="Database Status"></div>
           <div className={`w-2 h-2 rounded-full ${getRefreshStatusColor()}`} title="Market Status"></div>
         </div>
 
-        {/* Pause Toggle */}
-        <div className="flex-shrink-0">
-          <PauseToggle />
-        </div>
       </div>
     </div>
   )

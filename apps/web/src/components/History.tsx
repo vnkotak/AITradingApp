@@ -1,11 +1,54 @@
 "use client"
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTradingStore } from '../store/trading'
+import axios from 'axios'
+
+const API = process.env.NEXT_PUBLIC_API_BASE
 
 export default function History() {
-  const orders = useTradingStore(s => s.orders)
-  const trades = useTradingStore(s => s.trades)
+  const storeOrders = useTradingStore(s => s.orders)
+  const storeTrades = useTradingStore(s => s.trades)
+  const [dbOrders, setDbOrders] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // Load orders from database
+  useEffect(() => {
+    const loadOrdersFromDatabase = async () => {
+      try {
+        if (!API) return
+
+        console.log('History: Loading orders from database...')
+        const response = await axios.get(`${API}/orders`)
+        const ordersData = response.data || []
+
+        // Transform database format to component format
+        const transformedOrders = ordersData.map((order: any) => ({
+          ...order,
+          ts: new Date(order.ts).getTime(), // Convert to timestamp
+          status: order.status || 'FILLED'
+        }))
+
+        setDbOrders(transformedOrders)
+        console.log(`History: Loaded ${transformedOrders.length} orders from database`)
+      } catch (error) {
+        console.error('History: Failed to load orders from database:', error)
+        // Fall back to store orders if database fails
+        setDbOrders(storeOrders)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadOrdersFromDatabase()
+  }, [API, storeOrders])
+
+  // Use database orders if available, otherwise fall back to store orders
+  const orders = dbOrders.length > 0 ? dbOrders : storeOrders
+  const trades = storeTrades
+
+  // Calculate total orders count (prioritize database data)
+  const totalOrdersCount = loading ? 0 : orders.length
   const winRate = useMemo(() => {
     if (!trades.length) return 0
     // naive: count SELL after BUY as exit and pnl > 0; here we can't compute exact, show trade count
@@ -22,7 +65,13 @@ export default function History() {
              <h2 className="text-lg sm:text-2xl font-bold text-white">Recent Orders</h2>
            </div>
 
-          {orders.length === 0 ? (
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="text-4xl mb-4">⏳</div>
+              <div className="text-xl text-gray-300 mb-2">Loading Orders...</div>
+              <div className="text-sm text-gray-400">Fetching order history from database</div>
+            </div>
+          ) : orders.length === 0 ? (
             <div className="text-center py-12">
               <div className="text-4xl mb-4">📋</div>
               <div className="text-xl text-gray-300 mb-2">No Orders Yet</div>
@@ -85,7 +134,7 @@ export default function History() {
            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 md:gap-6">
             <div className="bg-white/5 rounded-lg sm:rounded-xl p-3 sm:p-6 border border-white/10">
               <div className="text-xs sm:text-sm text-gray-400 mb-2">Total Orders</div>
-              <div className="text-2xl sm:text-3xl font-bold text-white">{orders.length}</div>
+              <div className="text-2xl sm:text-3xl font-bold text-white">{loading ? '...' : totalOrdersCount}</div>
               <div className="text-xs text-gray-400 mt-1">All time</div>
             </div>
 

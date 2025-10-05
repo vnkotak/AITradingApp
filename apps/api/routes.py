@@ -309,7 +309,7 @@ def list_orders(ticker: str | None = None, exchange: Literal['NSE','BSE'] | None
     sb = get_client()
     q = sb.table("orders").select("*, symbols:ticker")
     # Simplified: return latest 50
-    return sb.table("orders").select("id,ts,side,type,price,qty,status,slippage_bps").order("ts", desc=True).limit(50).execute().data
+    return sb.table("orders").select("id,ts,side,type,price,qty,status,slippage_bps,simulator_notes").order("ts", desc=True).limit(50).execute().data
 
 
 @router.get("/positions")
@@ -354,19 +354,6 @@ def risk_apply_trailing(tf: str = '1m'):
     return {"exited": closed}
 
 
-class PauseReq(BaseModel):
-    pause_all: bool
-
-
-@router.post("/risk/pause")
-def risk_pause(req: PauseReq):
-    sb = get_client()
-    existing = sb.table("risk_limits").select("id").limit(1).execute().data
-    if existing:
-        sb.table("risk_limits").update({"pause_all": req.pause_all}).eq("id", existing[0]["id"]).execute()
-    else:
-        sb.table("risk_limits").insert({"pause_all": req.pause_all}).execute()
-    return {"pause_all": req.pause_all}
 
 
 @router.get("/pnl/summary")
