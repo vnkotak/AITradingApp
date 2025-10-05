@@ -76,8 +76,16 @@ jobs:
           echo "✅ Market is open. Proceeding with trade execution."
           echo "market_open=true" >> $GITHUB_OUTPUT
 
+          # Debug: Print workflow inputs for troubleshooting
+          echo "=== DEBUG WORKFLOW INPUTS ==="
+          echo "Dry run input: ${{ github.event.inputs.dry_run }}"
+          echo "Timeframes input: ${{ github.event.inputs.timeframes }}"
+          echo "Confidence input: ${{ github.event.inputs.confidence }}"
+          echo "Event name: ${{ github.event_name }}"
+          echo "=============================="
+
       - name: Execute Trades
-        if: steps.market-check.outputs.market_open == 'true' || github.event.inputs.dry_run == true
+        if: steps.market-check.outputs.market_open == 'true' || github.event.inputs.dry_run == 'true'
         run: |
           # Set default values
           TIMEFRAMES="${{ github.event.inputs.timeframes || '1m,5m,15m,1h,1d' }}"
