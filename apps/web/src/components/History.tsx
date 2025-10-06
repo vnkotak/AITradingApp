@@ -245,12 +245,12 @@ export default function History({ isVisible = true }: { isVisible?: boolean }) {
              <div className="space-y-4">
                {/* Interactive Equity Curve Chart */}
                <div className="bg-slate-900/30 rounded-lg p-4">
-                 <h3 className="text-lg font-semibold text-white mb-4">Portfolio Equity Curve</h3>
+                 <h3 className="text-lg font-semibold text-white mb-4">P&L Progression Curve</h3>
                  <div className="w-full">
                    <div ref={chartRef} className="w-full h-64" />
                  </div>
                  <div className="text-xs text-gray-400 mt-2 text-center">
-                   Hover over the chart to see exact values • Equity curve showing portfolio value over time (90 days)
+                   Hover over the chart to see exact values • P&L curve showing cumulative profit/loss progression (90 days)
                  </div>
                </div>
 
