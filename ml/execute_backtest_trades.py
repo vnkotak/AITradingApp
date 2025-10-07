@@ -66,6 +66,7 @@ def execute_backtest_trades(start_date: str = "2025-10-06", end_date: str = "202
 
                         # Convert to DataFrame
                         df = pd.DataFrame(candles_data)
+                        
                         for k in ["open","high","low","close","volume"]:
                             df[k] = pd.to_numeric(df[k], errors='coerce')
                         df["ts"] = pd.to_datetime(df["ts"], utc=True)
@@ -73,7 +74,7 @@ def execute_backtest_trades(start_date: str = "2025-10-06", end_date: str = "202
 
                         # Add indicators
                         df_with_indicators = add_indicators(df)
-
+                        
                         # Generate signals
                         signals = strategy_signals(df_with_indicators, strategy)
 
@@ -254,6 +255,7 @@ def execute_signals_chronologically(sb, symbol_id: str, ticker: str, exchange: s
 
             # Additional momentum failure check for existing positions
             momentum_exit = False
+            momentum_reason = ""
             if action == 'BUY' and current_position['qty'] > 0 and entry_indicators:
                 # Check if we should exit due to momentum failure before adding to position
                 current_candle_indicators = {k: v for k, v in signal_data.get('candle_data', {}).items()
@@ -264,10 +266,58 @@ def execute_signals_chronologically(sb, symbol_id: str, ticker: str, exchange: s
                 )
                 if momentum_exit:
                     print(f"    🚨 {timestamp.strftime('%m-%d %H:%M')} Momentum failure detected - {momentum_reason}")
-                    # Force a SELL signal to exit position
-                    action = 'SELL'
-                    signal['action'] = 'SELL'
-                    momentum_exit = True
+                    # Force a SELL signal to exit position - but don't change the signal, create separate exit logic
+                    # Instead of changing the BUY signal to SELL, we'll execute the momentum exit separately
+                    print(f"    📊 Executing momentum failure exit...")
+                    # Execute momentum exit trade here
+                    momentum_exit_price = signal_data['price']
+                    momentum_exit_qty = current_position['qty']  # Exit entire position
+
+                    momentum_indicators = {
+                        "strategy": "momentum_failure_exit",
+                        "timeframe": timeframe,
+                        "entry_price": momentum_exit_price,
+                        "confidence": 0.9,  # High confidence for risk management
+                        "momentum_failure_reason": momentum_reason,
+                        "entry_indicators": entry_indicators,
+                        "exit_indicators": current_candle_indicators,
+                        "indicators": current_candle_indicators
+                    }
+
+                    momentum_order_data = {
+                        "symbol_id": symbol_id,
+                        "ts": timestamp.isoformat(),
+                        "side": "SELL",
+                        "type": "MARKET",
+                        "price": momentum_exit_price,
+                        "qty": momentum_exit_qty,
+                        "status": "FILLED",
+                        "simulator_notes": momentum_indicators,
+                        "slippage_bps": 0.0
+                    }
+
+                    try:
+                        momentum_order_result = sb.table("orders").insert(momentum_order_data).execute()
+                        if momentum_order_result and momentum_order_result.data:
+                            print(f"    ✅ Momentum exit: SOLD {momentum_exit_qty} @ ₹{momentum_exit_price:.2f}")
+                            # Update position to closed
+                            current_position = {'qty': 0, 'avg_price': 0}
+                            entry_indicators = None
+                            position_timeframe = None
+                            # Update database position
+                            try:
+                                sb.table("positions").update({
+                                    "qty": 0,
+                                    "avg_price": 0,
+                                    "updated_at": timestamp.isoformat()
+                                }).eq("symbol_id", symbol_id).execute()
+                            except Exception as e:
+                                print(f"    ⚠️ Position update failed: {e}")
+                    except Exception as e:
+                        print(f"    ❌ Momentum exit failed: {e}")
+
+                    # Skip the original signal processing
+                    continue
 
             # Validate signal using trade executor
             should_execute, reason = trade_executor.should_execute_signal(
@@ -405,6 +455,6 @@ def execute_signals_chronologically(sb, symbol_id: str, ticker: str, exchange: s
 if __name__ == "__main__":
     # Execute comprehensive backtest for all strategies and timeframes from Sep 20 to present
     execute_backtest_trades(
-        start_date="2025-10-06",  # Extended date range from September 20
-        end_date="2025-10-06"    # To present (October 4)
+        start_date="2025-09-29",  # Extended date range from September 20
+        end_date="2025-10-07"    # To present (October 4)
     )
