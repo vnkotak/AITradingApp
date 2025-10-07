@@ -211,29 +211,16 @@ def fetch_history_df(symbol_id: str, ticker: str, exchange: str, tf: str, lookba
         elif ist_hour == 15 and ist_min <= 30:
             is_market_hours = True
 
-    # For intraday timeframes during market hours, always fetch recent data
-    if tf in ['1m', '5m', '15m'] and is_market_hours:
-        # During market hours, always fetch at least 1 day to ensure we have latest data
-        fetch_days = max(delta_days, 1)
-        print(f"📊 Market hours - fetching {fetch_days} days of {tf} data for {ticker}")
+    # Determine if we need to fetch new data
+    if (tf in ['1m', '5m', '15m'] and is_market_hours) or delta_days > 0:
+        # Fetch data from Yahoo
+        fetch_days = max(delta_days, 1) if (tf in ['1m', '5m', '15m'] and is_market_hours) else delta_days
+        print(f"📊 Fetching {fetch_days} days of {tf} data for {ticker}")
         candles = fetch_yahoo_candles(ticker, exchange, tf, lookback_days=fetch_days)
-    elif delta_days > 0:
-        # Need to fetch historical delta data
-        print(f"📊 Fetching {delta_days} days of {tf} data for {ticker}")
-        candles = fetch_yahoo_candles(ticker, exchange, tf, lookback_days=delta_days)
-    else:
-        # Data is up to date, just use existing data
-        print(f"📊 Data is current for {ticker} {tf}")
-        data = (
-            sb.table("candles").select("ts,open,high,low,close,volume")
-            .eq("symbol_id", symbol_id).eq("timeframe", tf)
-            .order("ts", desc=True).limit(1000).execute().data
-        )
-        candles = None
 
         if not candles:
             print(f"⚠️ No new {tf} data available for {ticker}")
-            # Still fetch existing data from DB
+            # Fetch existing data from DB
             data = (
                 sb.table("candles").select("ts,open,high,low,close,volume")
                 .eq("symbol_id", symbol_id).eq("timeframe", tf)
@@ -262,8 +249,9 @@ def fetch_history_df(symbol_id: str, ticker: str, exchange: str, tf: str, lookba
                 .eq("symbol_id", symbol_id).eq("timeframe", tf)
                 .order("ts", desc=True).limit(1000).execute().data
             )
-
-        # Fetch all data (including newly inserted)
+    else:
+        # Data is up to date, just use existing data
+        print(f"📊 Data is current for {ticker} {tf}")
         data = (
             sb.table("candles").select("ts,open,high,low,close,volume")
             .eq("symbol_id", symbol_id).eq("timeframe", tf)
