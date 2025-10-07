@@ -25,41 +25,68 @@ def trend_follow(df: pd.DataFrame) -> Signal | None:
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # ULTRA-RESTRICTIVE TREND FILTERS - Only strongest trend setups
+    # ENHANCED TREND FILTERS - Aligned with momentum breakout analysis
     if (pd.notna(last.get("ema20")) and pd.notna(last.get("ema50")) and pd.notna(last.get("adx14")) and
-        pd.notna(last.get("rsi14")) and pd.notna(last.get("bb_width")) and pd.notna(last.get("atr14"))):
+        pd.notna(last.get("rsi14")) and pd.notna(last.get("bb_width")) and pd.notna(last.get("atr14")) and
+        pd.notna(last.get("macd")) and pd.notna(last.get("macd_signal")) and pd.notna(last.get("macd_hist")) and
+        pd.notna(last.get("vwap")) and pd.notna(last.get("volume"))):
 
         crossed_up = prev["ema20"] <= prev["ema50"] and last["ema20"] > last["ema50"]
         crossed_dn = prev["ema20"] >= prev["ema50"] and last["ema20"] < last["ema50"]
 
-        # BALANCED STRICT CRITERIA - Selective but achievable
-        adx_min = 28  # Reasonable ADX requirement (strong trend)
-        rsi_max_buy = 65  # Allow some overbought bounce
-        rsi_min_sell = 35  # Allow some oversold bounce
+        # VOLUME CONFIRMATION - Critical for momentum breakouts
+        vol_avg = df["volume"].rolling(20).mean().iloc[-1]
+        volume_spike = last["volume"] > vol_avg * 1.5 if pd.notna(vol_avg) and vol_avg > 0 else False
 
-        if (crossed_up and last["adx14"] > adx_min and
-            (last.get("rsi14", 50) < rsi_max_buy or last["adx14"] > 40) and  # Allow higher RSI in very strong trends
-            last.get("bb_width", 0.05) > 0.012 and  # Moderate volatility
-            last["atr14"] > last["close"] * 0.006):  # Reasonable volatility environment
+        # RSI MOMENTUM - Rising in 55-80 range (not overbought like ChatGPT analysis)
+        rsi_rising = (last["rsi14"] > prev.get("rsi14", 50) and
+                     last["rsi14"] >= 55 and last["rsi14"] <= 75)
+
+        # TREND STRENGTH - ADX requirement
+        adx_strong = last["adx14"] >= 25  # Reduced from 28 to align with analysis
+
+        # MOMENTUM CONFIRMATION - MACD bullish
+        macd_bullish = (last["macd"] > last["macd_signal"] and
+                       last["macd_hist"] > 0)
+
+        # VWAP BREAKOUT - Price above VWAP (buyers in control)
+        vwap_breakout = last["close"] > last["vwap"]
+
+        # VOLATILITY BREAKOUT - Price near Bollinger upper
+        bb_breakout = last["close"] >= last.get("bb_upper", last["close"] * 1.1) * 0.995
+
+        # BUY SIGNAL - Enhanced with momentum indicators
+        if (crossed_up and adx_strong and rsi_rising and macd_bullish and
+            vwap_breakout and bb_breakout and volume_spike and
+            last.get("bb_width", 0.05) > 0.015 and  # Good volatility
+            last["atr14"] > last["close"] * 0.005):  # Sufficient volatility
 
             entry = float(last["close"])
-            stop = float(last["close"] - 1.5 * last["atr14"])  # Wider stops for trending moves
-            target = float(entry + 3.0 * (entry - stop))  # Better reward:risk
-            confidence = min(0.95, 0.75 + (last["adx14"] - adx_min) * 0.01)
+            stop = float(last["close"] - 1.5 * last["atr14"])
+            target = float(entry + 3.0 * (entry - stop))
+            confidence = min(0.95, 0.8 + (last["adx14"] - 25) * 0.005 +
+                           (0.1 if volume_spike else 0) + (0.1 if macd_bullish else 0))
             return Signal("BUY", entry, stop, target, confidence, "trend_follow",
-                         {"ema_cross":"20>50","adx":float(last["adx14"]),"rsi":float(last["rsi14"]),"ultra_restrictive":True,"improved":True})
+                         {"ema_cross":"20>50","adx":float(last["adx14"]),"rsi":float(last["rsi14"]),
+                          "macd_bullish":macd_bullish,"vwap_breakout":vwap_breakout,"volume_spike":volume_spike,
+                          "bb_breakout":bb_breakout,"momentum_aligned":True,"improved":True})
 
-        if (crossed_dn and last["adx14"] > adx_min and
-            (last.get("rsi14", 50) > rsi_min_sell or last["adx14"] > 40) and  # Allow lower RSI in very strong trends
-            last.get("bb_width", 0.05) > 0.012 and  # Moderate volatility
-            last["atr14"] > last["close"] * 0.006):  # Reasonable volatility environment
+        # SELL SIGNAL - Enhanced with momentum indicators
+        if (crossed_dn and adx_strong and rsi_rising and
+            (last["macd"] < last["macd_signal"] and last["macd_hist"] < 0) and  # MACD bearish
+            last["close"] < last["vwap"] and  # Below VWAP
+            volume_spike and
+            last.get("bb_width", 0.05) > 0.015 and
+            last["atr14"] > last["close"] * 0.005):
 
             entry = float(last["close"])
             stop = float(last["close"] + 1.5 * last["atr14"])
             target = float(entry - 3.0 * (stop - entry))
-            confidence = min(0.95, 0.75 + (last["adx14"] - adx_min) * 0.01)
+            confidence = min(0.95, 0.8 + (last["adx14"] - 25) * 0.005 + (0.1 if volume_spike else 0))
             return Signal("SELL", entry, stop, target, confidence, "trend_follow",
-                         {"ema_cross":"20<50","adx":float(last["adx14"]),"rsi":float(last["rsi14"]),"ultra_restrictive":True,"improved":True})
+                         {"ema_cross":"20<50","adx":float(last["adx14"]),"rsi":float(last["rsi14"]),
+                          "macd_bearish":True,"vwap_breakout":False,"volume_spike":volume_spike,
+                          "momentum_aligned":True,"improved":True})
     return None
 
 
@@ -169,13 +196,22 @@ def signal_quality_filter(signal: Signal, df: pd.DataFrame) -> bool:
 
     # Strategy-specific quality checks
     if signal.strategy == "trend_follow":
-        # Strong trend confirmation with balanced conditions
+        # Enhanced momentum breakout confirmation
         adx = last.get("adx14", 0)
         rsi = last.get("rsi14", 50)
         bb_width = last.get("bb_width", 0.05)
-        return (adx > 28 and  # Strong trend (>28)
+        rationale = signal.rationale
+
+        # Must have momentum alignment markers
+        momentum_aligned = rationale.get("momentum_aligned", False)
+        volume_spike = rationale.get("volume_spike", False)
+        macd_bullish = rationale.get("macd_bullish", False)
+
+        return (adx >= 25 and  # Reduced ADX requirement for momentum breakouts
                 bb_width > 0.015 and  # Good volatility
-                25 < rsi < 75)  # Reasonable RSI range
+                45 < rsi < 80 and  # RSI in momentum range (55-75 rising preferred)
+                momentum_aligned and  # Must have momentum confirmation
+                (volume_spike or macd_bullish))  # At least one volume/MACD confirmation
 
     elif signal.strategy == "mean_reversion":
         # Selective mean reversion setups
