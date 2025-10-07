@@ -10,6 +10,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
     const [marks, setMarks] = useState<Record<string, number>>({})
     const [loading, setLoading] = useState(true)
     const [refreshing, setRefreshing] = useState(false)
+    const [pricesLoading, setPricesLoading] = useState(false)
     const [portfolioPerformance, setPortfolioPerformance] = useState<any>(null)
     const [pnlData, setPnlData] = useState<any[]>([])
     const portfolioRefreshTrigger = useTradingStore(s => s.portfolioRefreshTrigger)
@@ -112,6 +113,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
       if (!mounted || !isVisible) return
 
       try {
+        setPricesLoading(true)
         const ad = await getMarketAdapter()
         const kv: Record<string, number> = {}
         for (const key of Object.keys(positions)) {
@@ -123,9 +125,11 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
         }
         if (mounted && isVisible) {
           setMarks(kv)
+          setPricesLoading(false)
         }
       } catch (error) {
         console.error('Price refresh error:', error)
+        setPricesLoading(false)
       }
 
       // Only schedule next refresh if still visible
@@ -173,6 +177,12 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                <div className="flex items-center gap-1 text-blue-400 text-sm">
                  <div className="w-1 h-1 bg-blue-400 rounded-full animate-pulse"></div>
                  <span>Refreshing positions...</span>
+               </div>
+             )}
+             {pricesLoading && !loading && !refreshing && (
+               <div className="flex items-center gap-1 text-purple-400 text-sm">
+                 <div className="w-1 h-1 bg-purple-400 rounded-full animate-pulse"></div>
+                 <span>Loading live prices...</span>
                </div>
              )}
            </div>
@@ -261,8 +271,8 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
             </div>
           ) : (
             <div className="space-y-3">
-              {/* Desktop: Enhanced Table Header */}
-              <div className="hidden lg:block bg-gradient-to-r from-slate-800/30 to-slate-700/30 rounded-xl p-4 mb-6 border border-slate-600/20">
+              {/* Desktop: Enhanced Table Header - STICKY */}
+              <div className="hidden lg:block sticky top-0 z-10 bg-gradient-to-r from-slate-800/95 to-slate-700/95 backdrop-blur-md rounded-xl p-4 mb-6 border border-slate-600/30 shadow-lg">
                 <div className="grid grid-cols-12 gap-4 text-sm font-semibold text-gray-300">
                   <div className="col-span-3">Stock</div>
                   <div className="text-center col-span-2">Position & Value</div>
@@ -300,12 +310,23 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                            </div>
                          </div>
                          <div className="text-right">
-                           <div className={`text-lg font-bold ${unreal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                             ₹{unreal.toFixed(2)}
-                           </div>
-                           <div className={`text-xs ${unreal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                             {percentChange >= 0 ? '+' : ''}{percentChange.toFixed(2)}%
-                           </div>
+                           {pricesLoading ? (
+                             <div className="flex flex-col items-end gap-1">
+                               <div className="flex items-center gap-2">
+                                 <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                                 <span className="text-sm text-gray-400">Loading...</span>
+                               </div>
+                             </div>
+                           ) : (
+                             <>
+                               <div className={`text-lg font-bold ${unreal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                 ₹{unreal.toFixed(2)}
+                               </div>
+                               <div className={`text-xs ${unreal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                 {percentChange >= 0 ? '+' : ''}{percentChange.toFixed(2)}%
+                               </div>
+                             </>
+                           )}
                          </div>
                        </div>
 
@@ -320,11 +341,23 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                          </div>
                          <div className="bg-slate-900/30 rounded p-2">
                            <div className="text-xs text-gray-400 mb-1">Current</div>
-                           <div className="text-sm font-semibold text-purple-400">₹{Number(last).toFixed(0)}</div>
+                           {pricesLoading ? (
+                             <div className="flex items-center justify-center py-1">
+                               <div className="w-3 h-3 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+                             </div>
+                           ) : (
+                             <div className="text-sm font-semibold text-purple-400">₹{Number(last).toFixed(0)}</div>
+                           )}
                          </div>
                          <div className="bg-slate-900/30 rounded p-2">
                            <div className="text-xs text-gray-400 mb-1">Value</div>
-                           <div className="text-sm font-semibold text-white">₹{(Math.abs(p.qty) * last).toFixed(0)}</div>
+                           {pricesLoading ? (
+                             <div className="flex items-center justify-center py-1">
+                               <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                             </div>
+                           ) : (
+                             <div className="text-sm font-semibold text-white">₹{(Math.abs(p.qty) * last).toFixed(0)}</div>
+                           )}
                          </div>
                        </div>
 
@@ -377,7 +410,13 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                              </div>
                              <div className="w-px h-8 bg-slate-600"></div>
                              <div className="text-center">
-                               <div className="text-lg font-bold text-orange-400">₹{(Math.abs(p.qty) * last).toFixed(0)}</div>
+                               {pricesLoading ? (
+                                 <div className="flex items-center justify-center py-1">
+                                   <div className="w-4 h-4 border-2 border-orange-400 border-t-transparent rounded-full animate-spin"></div>
+                                 </div>
+                               ) : (
+                                 <div className="text-lg font-bold text-orange-400">₹{(Math.abs(p.qty) * last).toFixed(0)}</div>
+                               )}
                                <div className="text-sm text-gray-400">value</div>
                              </div>
                            </div>
@@ -399,17 +438,30 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                              </div>
                              <div className="bg-slate-800/50 rounded-lg p-2">
                                <div className="text-xs text-gray-400 mb-1">Current</div>
-                               <div className="font-bold text-purple-400">₹{Number(last).toFixed(2)}</div>
+                               {pricesLoading ? (
+                                 <div className="flex items-center justify-center py-2">
+                                   <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+                                 </div>
+                               ) : (
+                                 <div className="font-bold text-purple-400">₹{Number(last).toFixed(2)}</div>
+                               )}
                              </div>
                            </div>
-                           <div className={`inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg ${
-                             percentChange >= 0
-                               ? 'bg-green-900/20 text-green-400 border border-green-700/30'
-                               : 'bg-red-900/20 text-red-400 border border-red-700/30'
-                           }`}>
-                             <span className="text-lg">{percentChange >= 0 ? '↗' : '↘'}</span>
-                             <span>{Math.abs(percentChange).toFixed(1)}%</span>
-                           </div>
+                           {pricesLoading ? (
+                             <div className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-gray-900/20 text-gray-400 border border-gray-700/30">
+                               <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                               <span>Loading...</span>
+                             </div>
+                           ) : (
+                             <div className={`inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg ${
+                               percentChange >= 0
+                                 ? 'bg-green-900/20 text-green-400 border border-green-700/30'
+                                 : 'bg-red-900/20 text-red-400 border border-red-700/30'
+                             }`}>
+                               <span className="text-lg">{percentChange >= 0 ? '↗' : '↘'}</span>
+                               <span>{Math.abs(percentChange).toFixed(1)}%</span>
+                             </div>
+                           )}
                          </div>
 
                          {/* P&L Performance */}
@@ -417,9 +469,15 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                            <div className="space-y-2">
                              <div>
                                <div className="text-xs text-gray-400 mb-1">Unrealized P&L</div>
-                               <div className={`text-xl font-bold ${unreal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                 {unreal >= 0 ? '+' : ''}₹{unreal.toFixed(2)}
-                               </div>
+                               {pricesLoading ? (
+                                 <div className="flex items-center justify-center py-2">
+                                   <div className="w-5 h-5 border-2 border-green-400 border-t-transparent rounded-full animate-spin"></div>
+                                 </div>
+                               ) : (
+                                 <div className={`text-xl font-bold ${unreal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                   {unreal >= 0 ? '+' : ''}₹{unreal.toFixed(2)}
+                                 </div>
+                               )}
                              </div>
                              {stockPerf && (
                                <div>
@@ -430,14 +488,20 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                                </div>
                              )}
                            </div>
-                           <div className="w-full bg-slate-700/50 rounded-full h-3">
-                             <div
-                               className={`h-3 rounded-full transition-all duration-300 ${
-                                 unreal >= 0 ? 'bg-gradient-to-r from-green-600 to-green-400' : 'bg-gradient-to-r from-red-600 to-red-400'
-                               }`}
-                               style={{ width: `${Math.min(100, Math.abs(unreal) / Math.max(1000, Math.abs(p.avgPrice * Math.abs(p.qty)) * 0.05) * 100)}%` }}
-                             ></div>
-                           </div>
+                           {pricesLoading ? (
+                             <div className="w-full bg-slate-700/30 rounded-full h-3 flex items-center justify-center">
+                               <div className="w-3 h-3 border-2 border-green-400 border-t-transparent rounded-full animate-spin"></div>
+                             </div>
+                           ) : (
+                             <div className="w-full bg-slate-700/50 rounded-full h-3">
+                               <div
+                                 className={`h-3 rounded-full transition-all duration-300 ${
+                                   unreal >= 0 ? 'bg-gradient-to-r from-green-600 to-green-400' : 'bg-gradient-to-r from-red-600 to-red-400'
+                                 }`}
+                                 style={{ width: `${Math.min(100, Math.abs(unreal) / Math.max(1000, Math.abs(p.avgPrice * Math.abs(p.qty)) * 0.05) * 100)}%` }}
+                               ></div>
+                             </div>
+                           )}
                          </div>
 
                          {/* Trading Analytics */}
