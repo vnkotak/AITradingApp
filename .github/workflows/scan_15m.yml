@@ -3,9 +3,13 @@ name: Scan 15m
 on:
   schedule:
     # Market hours: 9:15 AM - 3:30 PM IST = 3:45 AM - 10:00 AM UTC (Monday-Friday)
-    - cron: '45 3 * * 1-5'     # 3:45 UTC (Mon-Fri)
-    - cron: '*/15 4-9 * * 1-5' # Every 15 min from 4:00-9:59 UTC (Mon-Fri)
-    - cron: '0 10 * * 1-5'     # 10:00 UTC (Mon-Fri) - market close
+    # Every hour during market hours
+    - cron: '45 4 * * 1-5'     # 4:45 UTC (Mon-Fri) - around 10:15 AM IST
+    - cron: '45 5 * * 1-5'     # 5:45 UTC (Mon-Fri) - around 11:15 AM IST
+    - cron: '45 6 * * 1-5'     # 6:45 UTC (Mon-Fri) - around 12:15 PM IST
+    - cron: '45 7 * * 1-5'     # 7:45 UTC (Mon-Fri) - around 1:15 PM IST
+    - cron: '45 8 * * 1-5'     # 8:45 UTC (Mon-Fri) - around 2:15 PM IST
+    - cron: '45 9 * * 1-5'     # 9:45 UTC (Mon-Fri) - around 3:15 PM IST
   workflow_dispatch:
 
 jobs:

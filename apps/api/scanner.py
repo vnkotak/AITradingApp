@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List
 import pandas as pd
+import gc
 
 from apps.api.supabase_client import get_client
 from apps.api.yahoo_client import fetch_yahoo_candles
@@ -220,11 +221,11 @@ def fetch_history_df(symbol_id: str, ticker: str, exchange: str, tf: str, lookba
 
         if not candles:
             print(f"⚠️ No new {tf} data available for {ticker}")
-            # Fetch existing data from DB
+            # Fetch existing data from DB - reduced limit for memory
             data = (
                 sb.table("candles").select("ts,open,high,low,close,volume")
                 .eq("symbol_id", symbol_id).eq("timeframe", tf)
-                .order("ts", desc=True).limit(1000).execute().data
+                .order("ts", desc=True).limit(300).execute().data
             )
         else:
             rows = [{
@@ -243,19 +244,19 @@ def fetch_history_df(symbol_id: str, ticker: str, exchange: str, tf: str, lookba
                 sb.table("candles").upsert(rows, on_conflict="symbol_id,timeframe,ts").execute()
                 print(f"💾 Stored {len(rows)} new {tf} candles for {ticker}")
 
-            # Fetch all data (including newly inserted)
+            # Fetch all data (including newly inserted) - reduced limit for memory
             data = (
                 sb.table("candles").select("ts,open,high,low,close,volume")
                 .eq("symbol_id", symbol_id).eq("timeframe", tf)
-                .order("ts", desc=True).limit(1000).execute().data
+                .order("ts", desc=True).limit(300).execute().data
             )
     else:
-        # Data is up to date, just use existing data
+        # Data is up to date, just use existing data - reduced limit for memory
         print(f"📊 Data is current for {ticker} {tf}")
         data = (
             sb.table("candles").select("ts,open,high,low,close,volume")
             .eq("symbol_id", symbol_id).eq("timeframe", tf)
-            .order("ts", desc=True).limit(1000).execute().data
+            .order("ts", desc=True).limit(300).execute().data
         )
 
     df = pd.DataFrame(data)
@@ -267,13 +268,13 @@ def fetch_history_df(symbol_id: str, ticker: str, exchange: str, tf: str, lookba
     return df
 
 
-def scan_once(mode: str, force: bool = False) -> dict:
+def scan_once(mode: str, force: bool = False, max_symbols: int = 200) -> dict:
     sb = get_client()
     # Record run
-    print("Mode ", mode)
+    print(f"Mode {mode} - Memory optimized (max {max_symbols} symbols)")
     run = sb.table("strategy_runs").insert({"mode": mode}).execute().data[0]
     run_id = run["id"]
-    symbols = sb.table("symbols").select("id,ticker,exchange").eq("is_active", True).limit(250).execute().data
+    symbols = sb.table("symbols").select("id,ticker,exchange").eq("is_active", True).limit(max_symbols).execute().data
     total_signals = 0
     delta_updates = 0
     full_refreshes = 0
@@ -384,6 +385,10 @@ def scan_once(mode: str, force: bool = False) -> dict:
             "rationale": {"mode": mode, "symbol": ticker},
         }).execute()
         total_signals += len(rows)
+
+        # Memory cleanup after each symbol
+        del df, raw_signals, scored, ens, weights
+        gc.collect()
     sb.table("strategy_runs").update({"symbols_scanned": len(symbols or []), "signals_generated": total_signals, "completed_at": datetime.now(timezone.utc).isoformat()}).eq("id", run_id).execute()
 
     print("\n📋 SCAN SUMMARY:")

@@ -97,3 +97,27 @@ def mean_reversion(df: pd.DataFrame) -> Optional[Signal]:
 def momentum(df: pd.DataFrame) -> Optional[Signal]:
     """Placeholder for momentum strategy"""
     return None
+
+    return None
+
+
+def run_strategies(df: pd.DataFrame) -> List[Optional[Signal]]:
+    """Run all available strategies and return their signals"""
+    signals = []
+
+    # Run trend following strategy
+    trend_signal = trend_follow(df)
+    if trend_signal:
+        signals.append(trend_signal)
+
+    # Run mean reversion strategy
+    mean_rev_signal = mean_reversion(df)
+    if mean_rev_signal:
+        signals.append(mean_rev_signal)
+
+    # Run momentum strategy
+    momentum_signal = momentum(df)
+    if momentum_signal:
+        signals.append(momentum_signal)
+
+    return signals

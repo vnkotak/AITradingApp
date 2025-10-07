@@ -3,9 +3,15 @@ name: Scan 5m
 on:
   schedule:
     # Market hours: 9:15 AM - 3:30 PM IST = 3:45 AM - 10:00 AM UTC (Monday-Friday)
-    - cron: '45-59/5 3 * * 1-5'  # 3:45, 3:50, 3:55, 3:59 UTC (Mon-Fri)
-    - cron: '*/5 4-9 * * 1-5'    # Every 5 min from 4:00-9:59 UTC (Mon-Fri)
-    - cron: '0 10 * * 1-5'       # 10:00 UTC (Mon-Fri) - market close
+    # Every 20 minutes during market hours
+    - cron: '45 3 * * 1-5'  # 3:45 UTC (Mon-Fri)
+    - cron: '5,25,45 4 * * 1-5'    # 4:05, 4:25, 4:45 UTC (Mon-Fri)
+    - cron: '5,25,45 5 * * 1-5'    # 5:05, 5:25, 5:45 UTC (Mon-Fri)
+    - cron: '5,25,45 6 * * 1-5'    # 6:05, 6:25, 6:45 UTC (Mon-Fri)
+    - cron: '5,25,45 7 * * 1-5'    # 7:05, 7:25, 7:45 UTC (Mon-Fri)
+    - cron: '5,25,45 8 * * 1-5'    # 8:05, 8:25, 8:45 UTC (Mon-Fri)
+    - cron: '5,25,45 9 * * 1-5'    # 9:05, 9:25, 9:45 UTC (Mon-Fri)
+    - cron: '5 10 * * 1-5'         # 10:05 UTC (Mon-Fri) - market close
   workflow_dispatch:
 
 jobs:
