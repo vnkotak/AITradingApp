@@ -104,18 +104,18 @@ class TradeExecutor:
         return False
 
     def _should_exit_for_loss(self, pnl_pct: float, context: Dict) -> bool:
-        """Smart stop loss logic"""
-        # Large losses always exit
-        if pnl_pct <= -5.0:
+        """AGGRESSIVE stop loss logic - cut losses much faster"""
+        # Large losses always exit immediately
+        if pnl_pct <= -3.0:  # Tightened from -5.0% to -3.0%
             return True
 
-        if pnl_pct <= -2.0:
-            # Check if trend is still intact
-            if context.get("trend") == "bullish" and context.get("rsi", 50) > 30:
-                if context.get("current_price", 0) > context.get("recent_low", 0) * 1.02:
-                    return False  # Allow normal pullback
+        if pnl_pct <= -1.5:  # Tightened from -2.0% to -1.5%
+            # Check if trend is still intact - much stricter
+            if context.get("trend") == "bullish" and context.get("rsi", 50) > 40:  # Higher RSI requirement
+                if context.get("current_price", 0) > context.get("recent_low", 0) * 1.01:  # Tighter pullback allowance
+                    return False
 
-            return True
+            return True  # Exit on any weakness
 
         return False
 

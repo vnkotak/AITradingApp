@@ -14,7 +14,7 @@ from trade_execution import TradeExecutor
 
 Timeframe = Literal['1m','5m','15m','1h','1d']
 
-def execute_backtest_trades(start_date: str = "2025-09-01", end_date: str = "2025-10-04"):
+def execute_backtest_trades(start_date: str = "2025-10-06", end_date: str = "2025-10-06"):
     """
     Run comprehensive backtest for all strategies and timeframes from start_date to end_date.
     Processes signals chronologically across all timeframes for realistic simulation.
@@ -27,12 +27,12 @@ def execute_backtest_trades(start_date: str = "2025-09-01", end_date: str = "202
     # Initialize Supabase client
     sb = supabase_client()
 
-    # All strategies and timeframes to test - reduced for testing
-    strategies = ['trend_follow', 'mean_reversion','momentum']
+    # FOCUS ON TREND_FOLLOW ONLY - DISABLE OTHERS TO PREVENT OVERTRADING
+    strategies = ['trend_follow']
     timeframes = ['1m', '5m', '15m', '1h', '1d']
 
     # Load symbols - reduced for testing
-    symbols = load_symbols(limit=50)  # Reduced for testing
+    symbols = load_symbols(limit=250)  # Reduced for testing
     print(f"📊 Loaded {len(symbols)} symbols for backtesting")
 
     total_trades_executed = 0
@@ -80,14 +80,15 @@ def execute_backtest_trades(start_date: str = "2025-09-01", end_date: str = "202
                         # Collect signals with metadata
                         for idx, signal_action in signals.items():
                             if pd.notna(signal_action) and signal_action in ['BUY', 'SELL']:
+                                signal_candle = df_with_indicators.iloc[idx]
                                 all_signals.append({
-                                    'timestamp': df_with_indicators.iloc[idx]['ts'],
-                                    'price': df_with_indicators.iloc[idx]['close'],
+                                    'timestamp': signal_candle['ts'],
+                                    'price': float(signal_candle['close']),
                                     'action': signal_action,
                                     'timeframe': tf,
                                     'strategy': strategy,
                                     'df_index': idx,
-                                    'candle_data': df_with_indicators.iloc[idx]
+                                    'candle_data': signal_candle
                                 })
 
                     except Exception as e:
@@ -141,9 +142,13 @@ def aggregate_signals(signals: list, symbol_id: str, time_window_minutes: int = 
     current_group = None
 
     for signal in sorted_signals:
-        # Create group key based on symbol, action, and time window
+        # Skip signals with invalid prices (e.g., missing candle data)
+        if signal['price'] <= 0:
+            continue
+
+        # Create group key based on symbol, action, timeframe, and time window
         signal_time = datetime.fromisoformat(signal['timestamp'].replace('Z', '+00:00')) if isinstance(signal['timestamp'], str) else signal['timestamp']
-        group_key = f"{symbol_id}_{signal['action']}"
+        group_key = f"{symbol_id}_{signal['action']}_{signal['timeframe']}"
 
         # Check if this signal can be grouped with the current group
         if (current_group and
@@ -290,6 +295,10 @@ def execute_signals_chronologically(sb, symbol_id: str, ticker: str, exchange: s
 
             # Extract technical indicators from candle data for detailed analysis
             candle_data = signal_data.get('candle_data', {})
+
+            # Extract technical indicators from candle data for detailed analysis
+            candle_data = signal_data.get('candle_data', {})
+
             indicators = {
                 "strategy": strategy,
                 "timeframe": timeframe,
@@ -396,6 +405,6 @@ def execute_signals_chronologically(sb, symbol_id: str, ticker: str, exchange: s
 if __name__ == "__main__":
     # Execute comprehensive backtest for all strategies and timeframes from Sep 20 to present
     execute_backtest_trades(
-        start_date="2025-09-01",  # Extended date range from September 20
-        end_date="2025-10-04"    # To present (October 4)
+        start_date="2025-10-06",  # Extended date range from September 20
+        end_date="2025-10-06"    # To present (October 4)
     )

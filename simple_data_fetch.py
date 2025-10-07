@@ -60,18 +60,13 @@ def get_existing_data_info(symbol_id: str, timeframe: str) -> dict:
         print(f"❌ Error checking existing data: {e}")
         return {'exists': False, 'latest_date': None, 'days_count': 0}
 
-def calculate_delta_days(target_days: int, existing_info: dict) -> int:
+def calculate_delta_days(target_days: int, existing_info: dict, timeframe: str) -> int:
     """Calculate how many additional days of data we need"""
     if not existing_info['exists']:
         # No existing data, fetch full target period
         return target_days
 
-    # For now, we'll use a simple approach: if we have any data, skip fetching more
-    # In a production system, you'd want more sophisticated logic here
     latest_date = existing_info['latest_date']
-
-    # If the latest data is recent (within 1 day), we probably don't need more data
-    from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
 
     # Handle both string and datetime objects
@@ -87,6 +82,20 @@ def calculate_delta_days(target_days: int, existing_info: dict) -> int:
             return 0
 
     if isinstance(latest_date, datetime):
+        hours_since_latest = (now - latest_date).total_seconds() / 3600
+
+        # For intraday timeframes, always try to fetch recent data during market hours
+        if timeframe in ['1m', '5m', '15m']:
+            # If data is more than 4 hours old, fetch more to catch up
+            if hours_since_latest > 4:
+                delta_days = min(target_days, max(1, int(hours_since_latest / 24) + 1))
+                print(f"  📊 Intraday data is {hours_since_latest:.1f} hours old, fetching {delta_days} additional days")
+                return delta_days
+            else:
+                print(f"  📊 Intraday data is up to date (latest: {latest_date.strftime('%Y-%m-%d %H:%M:%S')})")
+                return 0
+
+        # For longer timeframes, use day-based logic
         days_since_latest = (now - latest_date).days
 
         if days_since_latest <= 1:
@@ -110,7 +119,7 @@ def fetch_and_store(ticker: str, exchange: str, timeframe: str, target_days: int
         existing_info = get_existing_data_info(symbol_id, timeframe)
 
         # Calculate how many days we actually need to fetch
-        delta_days = calculate_delta_days(target_days, existing_info)
+        delta_days = calculate_delta_days(target_days, existing_info, timeframe)
 
         if delta_days == 0:
             print(f"\n📊 {ticker} {timeframe}: No new data needed")

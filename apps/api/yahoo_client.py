@@ -1,7 +1,5 @@
 from datetime import datetime, timedelta, timezone
 from typing import Literal, List, Dict
-import math
-import random
 import requests
 import pandas as pd
 
@@ -108,8 +106,8 @@ def fetch_yahoo_candles(
         df = None
 
     if df is None or df.empty:
-        print("No data from Yahoo API, returning synthetic candles.")
-        return _generate_synthetic_candles(timeframe, lookback_days, seed_symbol=f"{ticker}.{exchange}")
+        print(f"❌ No data available for {yf_symbol} from Yahoo API")
+        return []
 
     candles: List[Dict] = []
     for _, row in df.iterrows():
@@ -129,38 +127,3 @@ def fetch_yahoo_candles(
     return candles
 
 
-def _generate_synthetic_candles(timeframe: str, lookback_days: int, seed_symbol: str) -> List[Dict]:
-    # Geometric random walk with mild volatility; timeframe granularity respected
-    tf_to_secs = {
-        '1m': 60,
-        '5m': 300,
-        '15m': 900,
-        '1h': 3600,
-        '1d': 86400,
-    }
-    step = tf_to_secs.get(timeframe, 60)
-    total_secs = max(1, lookback_days) * 86400
-    points = min(1200, max(50, total_secs // step))
-    rnd = random.Random(abs(hash(seed_symbol)) % (2**32))
-    now = int(datetime.now(timezone.utc).timestamp())
-    price = 500.0 + rnd.random() * 2500.0
-    vol_scale = 0.001 if timeframe != '1d' else 0.01
-    candles: List[Dict] = []
-    for i in range(points):
-        ts = datetime.fromtimestamp(now - (points - i) * step, tz=timezone.utc)
-        drift = (rnd.random() - 0.5) * vol_scale * price
-        open_px = price
-        close_px = max(1.0, price + drift)
-        high_px = max(open_px, close_px) + rnd.random() * vol_scale * 2 * price
-        low_px = min(open_px, close_px) - rnd.random() * vol_scale * 2 * price
-        volume = 100000 + rnd.random() * 50000
-        candles.append({
-            'ts': ts.isoformat(),
-            'open': float(open_px),
-            'high': float(high_px),
-            'low': float(low_px),
-            'close': float(close_px),
-            'volume': float(volume),
-        })
-        price = close_px
-    return candles

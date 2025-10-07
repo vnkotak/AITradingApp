@@ -7,7 +7,7 @@ import pandas as pd
 from apps.api.supabase_client import get_client
 from apps.api.yahoo_client import fetch_yahoo_candles
 from apps.api.strategies.indicators import add_core_indicators
-from apps.api.strategies.engine import run_strategies
+from apps.api.strategies.engine import run_strategies, signal_quality_filter
 from apps.api.signal_generator import ScoredSignal, score_signal, ensemble
 from apps.api.model_weights import get_latest_strategy_weights
 
@@ -161,12 +161,15 @@ def calculate_candle_delta_days(tf: str, existing_info: dict, max_lookback: int 
             return min(2, max_lookback)  # Fetch 1-2 days to get current session
 
         # Calculate delta based on timeframe
-        if tf == '1m':
-            # For 1m data, check if we need recent data (within last 2 hours during market hours)
-            if hours_since_latest < 2:
-                print(f"  📊 1m data is recent ({hours_since_latest:.1f} hours old)")
+        if tf in ['1m', '5m', '15m']:
+            # For intraday timeframes, always try to fetch recent data during market hours
+            if hours_since_latest > 4:
+                delta_days = min(max_lookback, max(1, int(hours_since_latest / 24) + 1))
+                print(f"  📊 Intraday data is {hours_since_latest:.1f} hours old, fetching {delta_days} additional days")
+                return delta_days
+            else:
+                print(f"  📊 Intraday data is up to date ({hours_since_latest:.1f} hours old)")
                 return 0
-            delta_days = min(max_lookback, max(1, int(hours_since_latest / 24) + 1))
         else:
             # For other timeframes, use days but be more conservative during market hours
             if days_since_latest <= 1:
@@ -186,17 +189,47 @@ def fetch_history_df(symbol_id: str, ticker: str, exchange: str, tf: str, lookba
     existing_info = get_existing_candle_info(symbol_id, tf)
     delta_days = calculate_candle_delta_days(tf, existing_info, lookback_days)
 
-    if delta_days == 0:
-        # Data is up to date, just fetch existing data
+    # Always fetch some recent data during market hours for intraday timeframes
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+
+    # Convert to IST for market hours check
+    ist_hour = (now.hour + 5) % 24
+    ist_min = now.minute + 30
+    if ist_min >= 60:
+        ist_min -= 60
+        ist_hour = (ist_hour + 1) % 24
+
+    # Check if within market hours (IST 9:15 AM - 3:30 PM) and weekday
+    is_weekday = 1 <= now.weekday() + 1 <= 5
+    is_market_hours = False
+    if is_weekday:
+        if ist_hour > 9 and ist_hour < 15:
+            is_market_hours = True
+        elif ist_hour == 9 and ist_min >= 15:
+            is_market_hours = True
+        elif ist_hour == 15 and ist_min <= 30:
+            is_market_hours = True
+
+    # For intraday timeframes during market hours, always fetch recent data
+    if tf in ['1m', '5m', '15m'] and is_market_hours:
+        # During market hours, always fetch at least 1 day to ensure we have latest data
+        fetch_days = max(delta_days, 1)
+        print(f"📊 Market hours - fetching {fetch_days} days of {tf} data for {ticker}")
+        candles = fetch_yahoo_candles(ticker, exchange, tf, lookback_days=fetch_days)
+    elif delta_days > 0:
+        # Need to fetch historical delta data
+        print(f"📊 Fetching {delta_days} days of {tf} data for {ticker}")
+        candles = fetch_yahoo_candles(ticker, exchange, tf, lookback_days=delta_days)
+    else:
+        # Data is up to date, just use existing data
+        print(f"📊 Data is current for {ticker} {tf}")
         data = (
             sb.table("candles").select("ts,open,high,low,close,volume")
             .eq("symbol_id", symbol_id).eq("timeframe", tf)
             .order("ts", desc=True).limit(1000).execute().data
         )
-    else:
-        # Need to fetch delta data from Yahoo
-        print(f"📊 Fetching {delta_days} days of {tf} data for {ticker}")
-        candles = fetch_yahoo_candles(ticker, exchange, tf, lookback_days=delta_days)
+        candles = None
 
         if not candles:
             print(f"⚠️ No new {tf} data available for {ticker}")
@@ -313,14 +346,11 @@ def scan_once(mode: str, force: bool = False) -> dict:
                 "confidence": conf,
                 "rationale": {"rationale": sig.rationale, "scoring": rationale},
             })
-        # IMPROVED: Filter for high-quality signals only
+        # Use the same quality filtering as backtest - just apply signal_quality_filter
         quality_signals = []
         for sig in raw_signals:
-            # Only keep signals with improved logic, high confidence, and not in extreme conditions
-            if (sig.rationale.get("improved", False) and
-                sig.confidence > 0.6 and
-                sig.strategy in ["trend_follow", "mean_reversion", "momentum"] and
-                not is_overbought_oversold(df)):  # Filter out signals in extreme market conditions
+            # Apply the same filter used in backtest
+            if signal_quality_filter(sig, df):
                 quality_signals.append(sig)
 
         if quality_signals:

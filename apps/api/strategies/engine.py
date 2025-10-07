@@ -25,59 +25,90 @@ def trend_follow(df: pd.DataFrame) -> Signal | None:
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # IMPROVED FILTERS - More selective
-    if pd.notna(last.get("ema20")) and pd.notna(last.get("ema50")) and pd.notna(last.get("adx14")):
+    # ULTRA-RESTRICTIVE TREND FILTERS - Only strongest trend setups
+    if (pd.notna(last.get("ema20")) and pd.notna(last.get("ema50")) and pd.notna(last.get("adx14")) and
+        pd.notna(last.get("rsi14")) and pd.notna(last.get("bb_width")) and pd.notna(last.get("atr14"))):
+
         crossed_up = prev["ema20"] <= prev["ema50"] and last["ema20"] > last["ema50"]
         crossed_dn = prev["ema20"] >= prev["ema50"] and last["ema20"] < last["ema50"]
 
-        # STRicTER CRITERIA - Higher ADX threshold
-        if crossed_up and last["adx14"] > 25:  # Increased from 15 to 25
-            entry = float(last["close"])
-            # Tighter stop loss for better risk management
-            stop = float(last["close"] - 1.2 * last["atr14"])  # Reduced from 1.5x to 1.2x
-            target = float(entry + 2.5 * (entry - stop))  # Better reward:risk
-            confidence = min(0.9, 0.6 + (last["adx14"] - 25) * 0.02)  # Higher confidence for stronger trends
-            return Signal("BUY", entry, stop, target, confidence, "trend_follow",
-                         {"ema_cross":"20>50","adx":float(last["adx14"]),"improved":True})
+        # BALANCED STRICT CRITERIA - Selective but achievable
+        adx_min = 28  # Reasonable ADX requirement (strong trend)
+        rsi_max_buy = 65  # Allow some overbought bounce
+        rsi_min_sell = 35  # Allow some oversold bounce
 
-        if crossed_dn and last["adx14"] > 25:  # Increased from 15 to 25
+        if (crossed_up and last["adx14"] > adx_min and
+            (last.get("rsi14", 50) < rsi_max_buy or last["adx14"] > 40) and  # Allow higher RSI in very strong trends
+            last.get("bb_width", 0.05) > 0.012 and  # Moderate volatility
+            last["atr14"] > last["close"] * 0.006):  # Reasonable volatility environment
+
             entry = float(last["close"])
-            stop = float(last["close"] + 1.2 * last["atr14"])  # Reduced from 1.5x to 1.2x
-            target = float(entry - 2.5 * (stop - entry))  # Better reward:risk
-            confidence = min(0.9, 0.6 + (last["adx14"] - 25) * 0.02)
+            stop = float(last["close"] - 1.5 * last["atr14"])  # Wider stops for trending moves
+            target = float(entry + 3.0 * (entry - stop))  # Better reward:risk
+            confidence = min(0.95, 0.75 + (last["adx14"] - adx_min) * 0.01)
+            return Signal("BUY", entry, stop, target, confidence, "trend_follow",
+                         {"ema_cross":"20>50","adx":float(last["adx14"]),"rsi":float(last["rsi14"]),"ultra_restrictive":True,"improved":True})
+
+        if (crossed_dn and last["adx14"] > adx_min and
+            (last.get("rsi14", 50) > rsi_min_sell or last["adx14"] > 40) and  # Allow lower RSI in very strong trends
+            last.get("bb_width", 0.05) > 0.012 and  # Moderate volatility
+            last["atr14"] > last["close"] * 0.006):  # Reasonable volatility environment
+
+            entry = float(last["close"])
+            stop = float(last["close"] + 1.5 * last["atr14"])
+            target = float(entry - 3.0 * (stop - entry))
+            confidence = min(0.95, 0.75 + (last["adx14"] - adx_min) * 0.01)
             return Signal("SELL", entry, stop, target, confidence, "trend_follow",
-                         {"ema_cross":"20<50","adx":float(last["adx14"]),"improved":True})
+                         {"ema_cross":"20<50","adx":float(last["adx14"]),"rsi":float(last["rsi14"]),"ultra_restrictive":True,"improved":True})
     return None
 
 
 def mean_reversion(df: pd.DataFrame) -> Signal | None:
-    if len(df) < 60:  # Increased data requirement
+    # TEMPORARILY DISABLE MEAN REVERSION - OFTEN NOISY IN TRENDING MARKETS
+    return None
+
+    if len(df) < 100:  # Much longer lookback for better context
         return None
     last = df.iloc[-1]
 
-    if pd.notna(last.get("rsi14")) and pd.notna(last.get("bb_lower")) and pd.notna(last.get("bb_upper")):
-        # IMPROVED FILTERS - More extreme conditions only
-        if last["rsi14"] < 25 and last["close"] < last["bb_lower"]:  # Stricter from 30 to 25
-            entry = float(last["close"])
-            # Tighter stop for better risk management
-            stop = float(min(last["bb_lower"], last["close"] - 1.0 * last["atr14"]))  # Reduced from 1.2x to 1.0x
-            target = float(last["bb_mid"]) if pd.notna(last.get("bb_mid")) else None
-            # Higher confidence for more extreme conditions
-            confidence = min(0.8, 0.5 + (25 - last["rsi14"]) * 0.02)
-            return Signal("BUY", entry, stop, target, confidence, "mean_reversion",
-                         {"rsi":float(last["rsi14"]),"bb_breakout":True,"improved":True})
+    # ULTRA-RESTRICTIVE MEAN REVERSION - Only extreme setups with confirming factors
+    if (pd.notna(last.get("rsi14")) and pd.notna(last.get("bb_lower")) and pd.notna(last.get("bb_upper")) and
+        pd.notna(last.get("adx14")) and pd.notna(last.get("volume")) and pd.notna(last.get("atr14"))):
 
-        if last["rsi14"] > 75 and last["close"] > last["bb_upper"]:  # Stricter from 70 to 75
+        # BUY: Extreme oversold with low ADX (sideways market) and volume confirmation
+        if (last["rsi14"] < 20 and  # Ultra oversold
+            last["close"] < last["bb_lower"] * 0.995 and  # Deep below lower BB
+            last.get("adx14", 25) < 20 and  # Low ADX = ranging market
+            last["atr14"] < last["close"] * 0.01 and  # Low volatility environment
+            last["volume"] > df["volume"].rolling(20).mean().iloc[-1] * 1.2):  # Above average volume
+
             entry = float(last["close"])
-            stop = float(max(last["bb_upper"], last["close"] + 1.0 * last["atr14"]))  # Reduced from 1.2x to 1.0x
-            target = float(last["bb_mid"]) if pd.notna(last.get("bb_mid")) else None
-            confidence = min(0.8, 0.5 + (last["rsi14"] - 75) * 0.02)
+            stop = float(last["close"] - 2.0 * last["atr14"])  # Very wide stops for ranging moves
+            target = float(last["bb_mid"]) if pd.notna(last.get("bb_mid")) else entry * 1.05
+            confidence = min(0.8, 0.6 + (20 - last["rsi14"]) * 0.02)
+            return Signal("BUY", entry, stop, target, confidence, "mean_reversion",
+                         {"rsi":float(last["rsi14"]),"bb_breakout":True,"adx":float(last["adx14"]),"ultra_restrictive":True,"improved":True})
+
+        # SELL: Extreme overbought with low ADX and volume confirmation
+        if (last["rsi14"] > 80 and  # Ultra overbought
+            last["close"] > last["bb_upper"] * 1.005 and  # Deep above upper BB
+            last.get("adx14", 25) < 20 and  # Low ADX = ranging market
+            last["atr14"] < last["close"] * 0.01 and  # Low volatility
+            last["volume"] > df["volume"].rolling(20).mean().iloc[-1] * 1.2):  # Above average volume
+
+            entry = float(last["close"])
+            stop = float(last["close"] + 2.0 * last["atr14"])
+            target = float(last["bb_mid"]) if pd.notna(last.get("bb_mid")) else entry * 0.95
+            confidence = min(0.8, 0.6 + (last["rsi14"] - 80) * 0.02)
             return Signal("SELL", entry, stop, target, confidence, "mean_reversion",
-                         {"rsi":float(last["rsi14"]),"bb_breakout":True,"improved":True})
+                         {"rsi":float(last["rsi14"]),"bb_breakout":True,"adx":float(last["adx14"]),"ultra_restrictive":True,"improved":True})
     return None
 
 
 def momentum(df: pd.DataFrame) -> Signal | None:
+    # TEMPORARILY DISABLE MOMENTUM STRATEGY - CAUSING TOO MANY TRADES
+    return None
+
     if len(df) < 60:  # Increased data requirement
         return None
     last = df.iloc[-1]
@@ -87,74 +118,85 @@ def momentum(df: pd.DataFrame) -> Signal | None:
     vol_z = (df["volume"] - vol) / (df["volume"].rolling(20).std() + 1e-9)
     last_z = float(vol_z.iloc[-1]) if pd.notna(vol_z.iloc[-1]) else 0.0
 
-    if pd.notna(last.get("vwap")) and pd.notna(last.get("ema20")) and pd.notna(last.get("ema50")):
-        # IMPROVED FILTERS - Higher volume threshold and better price action
+    # ULTRA-RESTRICTIVE FILTERS - Only strongest momentum setups
+    if (pd.notna(last.get("vwap")) and pd.notna(last.get("ema20")) and pd.notna(last.get("ema50")) and
+        pd.notna(last.get("rsi14")) and pd.notna(last.get("atr14"))):
+
+        # BUY: Extremely strong bullish momentum with oversold bounce
         if (last["close"] > last["vwap"] and
             last["ema20"] > last["ema50"] and
-            last_z > 1.5 and  # Increased from 1.0 to 1.5 (stronger volume spike)
-            last["close"] > last["ema20"] * 1.001):  # Price above MA (strong momentum)
+            last_z > 2.5 and  # Very strong volume spike (>2.5 std dev)
+            last["close"] > last["ema20"] * 1.005 and  # Significant distance above EMA
+            last.get("rsi14", 50) > 65 and  # RSI showing strength, not overbought
+            last["atr14"] > last["close"] * 0.005):  # Sufficient volatility
 
             entry = float(last["close"])
-            # Tighter stop for better risk management
-            stop = float(last["close"] - 0.8 * last["atr14"]) if pd.notna(last.get("atr14")) else float(last["close"]*0.992)
-            target = float(entry + 2.5 * (entry - stop))  # Better reward:risk
-            # Higher confidence for stronger setups
-            confidence = min(0.85, 0.55 + min(last_z - 1.5, 2.0) * 0.1)
+            stop = float(last["close"] - 1.5 * last["atr14"])  # Wider stop for volatile moves
+            target = float(entry + 3.0 * (entry - stop))  # Higher reward:risk
+            confidence = min(0.9, 0.7 + min(last_z - 2.5, 1.5) * 0.1)
             return Signal("BUY", entry, stop, target, confidence, "momentum",
-                         {"vol_z":last_z,"vwap_breakout":True,"improved":True})
+                         {"vol_z":last_z,"vwap_breakout":True,"ultra_restrictive":True,"improved":True})
 
+        # SELL: Extremely strong bearish momentum with overbought bounce
         if (last["close"] < last["vwap"] and
             last["ema20"] < last["ema50"] and
-            last_z > 1.5 and  # Increased from 1.0 to 1.5
-            last["close"] < last["ema20"] * 0.999):  # Price below MA (strong down momentum)
+            last_z > 2.5 and  # Very strong volume spike
+            last["close"] < last["ema20"] * 0.995 and  # Significant distance below EMA
+            last.get("rsi14", 50) < 35 and  # RSI showing weakness, not oversold
+            last["atr14"] > last["close"] * 0.005):  # Sufficient volatility
 
             entry = float(last["close"])
-            stop = float(last["close"] + 0.8 * last["atr14"]) if pd.notna(last.get("atr14")) else float(last["close"]*1.008)
-            target = float(entry - 2.5 * (stop - entry))
-            confidence = min(0.85, 0.55 + min(last_z - 1.5, 2.0) * 0.1)
+            stop = float(last["close"] + 1.5 * last["atr14"])
+            target = float(entry - 3.0 * (stop - entry))
+            confidence = min(0.9, 0.7 + min(last_z - 2.5, 1.5) * 0.1)
             return Signal("SELL", entry, stop, target, confidence, "momentum",
-                         {"vol_z":last_z,"vwap_breakout":True,"improved":True})
+                         {"vol_z":last_z,"vwap_breakout":True,"ultra_restrictive":True,"improved":True})
     return None
 
 
 def signal_quality_filter(signal: Signal, df: pd.DataFrame) -> bool:
-    """Filter signals for better quality - only keep high-confidence setups"""
+    """BALANCED signal filtering - quality setups without being impossible"""
 
-    # Minimum confidence threshold
-    if signal.confidence < 0.6:
+    # Reasonable confidence threshold
+    if signal.confidence < 0.7:  # Reduced from 0.75 to 0.7
         return False
 
-    # Check for improved strategies only (exclude old logic)
+    # Check for improved strategies
     if not signal.rationale.get("improved", False):
         return False
 
     last = df.iloc[-1]
 
-    # Additional filters based on strategy type
+    # Strategy-specific quality checks
     if signal.strategy == "trend_follow":
-        # Strong trend confirmation
-        return last.get("adx14", 0) > 25
+        # Strong trend confirmation with balanced conditions
+        adx = last.get("adx14", 0)
+        rsi = last.get("rsi14", 50)
+        bb_width = last.get("bb_width", 0.05)
+        return (adx > 28 and  # Strong trend (>28)
+                bb_width > 0.015 and  # Good volatility
+                25 < rsi < 75)  # Reasonable RSI range
 
     elif signal.strategy == "mean_reversion":
-        # Extreme RSI conditions only
+        # Selective mean reversion setups
+        adx = last.get("adx14", 25)
         rsi = last.get("rsi14", 50)
-        if signal.action == "BUY":
-            return rsi < 25
-        else:
-            return rsi > 75
+        return (adx < 25 and  # Low ADX = ranging market
+                ((rsi < 30) or (rsi > 70)))  # Extreme RSI levels
 
     elif signal.strategy == "momentum":
-        # Strong volume confirmation
+        # Strong momentum confirmation
         vol = df["volume"].rolling(20).mean()
         vol_z = (df["volume"] - vol) / (df["volume"].rolling(20).std() + 1e-9)
         last_z = float(vol_z.iloc[-1]) if pd.notna(vol_z.iloc[-1]) else 0.0
-        return last_z > 1.5
+        return last_z > 2.0  # Strong volume confirmation
 
-    return True
+    return True  # Allow other strategies
 
 def run_strategies(df: pd.DataFrame) -> List[Signal]:
     signals: List[Signal] = []
-    for strat in (trend_follow, mean_reversion, momentum):
+    # FOCUS ON TREND_FOLLOW ONLY - DISABLE OTHERS TO PREVENT OVERTRADING
+    for strat in (trend_follow,):  # Only trend_follow for now
         try:
             s = strat(df)
             if s and signal_quality_filter(s, df):
