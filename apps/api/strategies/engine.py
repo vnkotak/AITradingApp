@@ -1,5 +1,5 @@
 import pandas as pd
-from typing import Optional
+from typing import Optional, List
 
 # Define Signal class if not imported
 class Signal:
@@ -86,8 +86,6 @@ def signal_quality_filter(signal: Signal, df: pd.DataFrame) -> bool:
 
     return True  # Default to accepting signals for other strategies
 
-    return True  # Default to accepting signals for other strategies
-
 
 def mean_reversion(df: pd.DataFrame) -> Optional[Signal]:
     """Placeholder for mean reversion strategy"""
@@ -96,8 +94,6 @@ def mean_reversion(df: pd.DataFrame) -> Optional[Signal]:
 
 def momentum(df: pd.DataFrame) -> Optional[Signal]:
     """Placeholder for momentum strategy"""
-    return None
-
     return None
 
 
