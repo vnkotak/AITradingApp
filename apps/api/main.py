@@ -57,4 +57,7 @@ def run_scanner(mode: str, force: bool = False, _=Depends(verify_scanner_token))
         "symbols_scanned": (result.get("symbols_scanned") if isinstance(result, dict) else None),
     }
 
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 

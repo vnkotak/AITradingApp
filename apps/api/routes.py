@@ -520,7 +520,7 @@ def fetch_real_market_indices():
 
 def fetch_comprehensive_market_heatmap():
     """Fetch comprehensive market heatmap with sector-wise stock selection"""
-    from apps.api.yahoo_client import fetch_yahoo_candles
+    from apps.api.yahoo_client import fetch_yahoo_candles, fetch_real_time_quote
 
     # Comprehensive sector-wise stock selection for proper market overview
     sector_stocks = {
@@ -984,6 +984,19 @@ def run_auto_execution(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Auto-execution error: {str(e)}")
+
+
+@router.get("/prices/realtime")
+def get_real_time_price(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE'):
+    """Get real-time price for a stock from Yahoo Finance"""
+    try:
+        price = fetch_real_time_quote(ticker, exchange)
+        if price > 0:
+            return {"price": price, "ticker": ticker, "exchange": exchange, "source": "yahoo_realtime"}
+        else:
+            raise HTTPException(status_code=404, detail=f"No real-time price available for {ticker}.{exchange}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching real-time price: {str(e)}")
 
 
 @router.get("/home/system-status")

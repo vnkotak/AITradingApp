@@ -5,15 +5,46 @@ import { useTradingStore } from '../store/trading'
 import { getMarketAdapter } from '../lib/marketAdapter'
 
 export default function Portfolio({ isVisible = true }: { isVisible?: boolean }) {
-   // Temporarily bypass store, load directly from database
-    const [positions, setPositions] = useState<Record<string, any>>({})
-    const [marks, setMarks] = useState<Record<string, number>>({})
-    const [loading, setLoading] = useState(true)
-    const [refreshing, setRefreshing] = useState(false)
-    const [pricesLoading, setPricesLoading] = useState(false)
-    const [portfolioPerformance, setPortfolioPerformance] = useState<any>(null)
-    const [pnlData, setPnlData] = useState<any[]>([])
-    const portfolioRefreshTrigger = useTradingStore(s => s.portfolioRefreshTrigger)
+    // Temporarily bypass store, load directly from database
+     const [positions, setPositions] = useState<Record<string, any>>({})
+     const [marks, setMarks] = useState<Record<string, number>>({})
+     const [loading, setLoading] = useState(true)
+     const [refreshing, setRefreshing] = useState(false)
+     const [pricesLoading, setPricesLoading] = useState(false)
+     const [portfolioPerformance, setPortfolioPerformance] = useState<any>(null)
+     const [pnlData, setPnlData] = useState<any[]>([])
+     const portfolioRefreshTrigger = useTradingStore(s => s.portfolioRefreshTrigger)
+
+     // Check if Indian markets are currently open
+     const isMarketOpen = (): boolean => {
+       const now = new Date()
+
+       // Convert to IST (UTC+5:30) - get IST components
+       const istOffset = 5.5 * 60 * 60 * 1000 // 5.5 hours in milliseconds
+       const istTime = new Date(now.getTime() + istOffset)
+
+       // Get IST date components
+       const year = istTime.getUTCFullYear()
+       const month = istTime.getUTCMonth()
+       const day = istTime.getUTCDate()
+       const hour = istTime.getUTCHours()
+       const minute = istTime.getUTCMinutes()
+
+       // Create IST date object to get correct day of week
+       const istDate = new Date(year, month, day)
+       const dayOfWeek = istDate.getDay() // 0=Sunday, 1=Monday, ..., 6=Saturday
+
+       // Check if it's a weekday (Monday-Friday)
+       const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5
+
+       if (!isWeekday) return false
+
+       // Check if within market hours (9:15 AM - 3:30 PM IST)
+       const marketOpen = hour > 9 || (hour === 9 && minute >= 15)
+       const marketClose = hour < 15 || (hour === 15 && minute <= 30)
+
+       return marketOpen && marketClose
+     }
 
   // Load positions from database on mount and when refresh is triggered (only when tab is visible)
   useEffect(() => {
@@ -113,6 +144,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
       if (!mounted || !isVisible) return
 
       try {
+        // Only show loading for initial load, not for refreshes
         setPricesLoading(true)
         const ad = await getMarketAdapter()
         const kv: Record<string, number> = {}
@@ -121,7 +153,16 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
           if (!mounted || !isVisible) return
 
           const p = positions[key]
-          kv[key] = await ad.getLastPrice(p.ticker, p.exchange)
+          const price = await ad.getLastPrice(p.ticker, p.exchange)
+
+          // Validate price - skip invalid prices (zero, negative, or extremely low)
+          if (price > 0.01) {  // Minimum valid price threshold
+            kv[key] = price
+          } else {
+            console.warn(`⚠️ Skipping invalid price for ${key}: ${price}`)
+            // Use avg price as fallback for display, but mark as invalid
+            kv[key] = -1  // Special marker for invalid price
+          }
         }
         if (mounted && isVisible) {
           setMarks(kv)
@@ -134,7 +175,12 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
 
       // Only schedule next refresh if still visible
       if (mounted && isVisible) {
-        timer = setTimeout(load, 10000)
+        // Check market status to determine refresh frequency
+        const marketOpen = isMarketOpen()
+        const refreshInterval = marketOpen ? 30000 : 3600000 // 30s if market open, 1 hour if closed
+        timer = setTimeout(load, refreshInterval)
+
+        console.log(`📊 Price refresh scheduled in ${refreshInterval/1000} seconds (Market ${marketOpen ? 'OPEN' : 'CLOSED'})`)
       }
     }
 
@@ -284,9 +330,11 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
 
               {rows.map((p: any, index: number) => {
                  const key = `${p.ticker}.${p.exchange}`
-                 const last = marks[key] ?? p.avgPrice
-                 const unreal = (last - p.avgPrice) * (p.qty > 0 ? Math.abs(p.qty) : -Math.abs(p.qty))
-                 const percentChange = p.avgPrice !== 0 ? ((last - p.avgPrice) / p.avgPrice) * 100 : 0
+                 const priceData = marks[key]
+                 const last = priceData === -1 ? p.avgPrice : (priceData ?? p.avgPrice)  // Use avg price as fallback for invalid data
+                 const isPriceValid = priceData !== -1 && priceData !== undefined
+                 const unreal = isPriceValid ? (last - p.avgPrice) * (p.qty > 0 ? Math.abs(p.qty) : -Math.abs(p.qty)) : 0
+                 const percentChange = isPriceValid && p.avgPrice !== 0 ? ((last - p.avgPrice) / p.avgPrice) * 100 : 0
 
                  // Get performance data for this stock
                  const stockPerf = stockPerformanceMap[key]
@@ -310,12 +358,17 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                            </div>
                          </div>
                          <div className="text-right">
-                           {pricesLoading ? (
+                           {pricesLoading && !marks[key] ? (
                              <div className="flex flex-col items-end gap-1">
                                <div className="flex items-center gap-2">
                                  <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
                                  <span className="text-sm text-gray-400">Loading...</span>
                                </div>
+                             </div>
+                           ) : !isPriceValid ? (
+                             <div className="flex flex-col items-end gap-1">
+                               <div className="text-sm text-orange-400">⚠️ Price unavailable</div>
+                               <div className="text-xs text-gray-400">Using avg. price</div>
                              </div>
                            ) : (
                              <>
@@ -341,7 +394,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                          </div>
                          <div className="bg-slate-900/30 rounded p-2">
                            <div className="text-xs text-gray-400 mb-1">Current</div>
-                           {pricesLoading ? (
+                           {pricesLoading && !marks[key] ? (
                              <div className="flex items-center justify-center py-1">
                                <div className="w-3 h-3 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
                              </div>
@@ -351,7 +404,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                          </div>
                          <div className="bg-slate-900/30 rounded p-2">
                            <div className="text-xs text-gray-400 mb-1">Value</div>
-                           {pricesLoading ? (
+                           {pricesLoading && !marks[key] ? (
                              <div className="flex items-center justify-center py-1">
                                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                              </div>
@@ -410,7 +463,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                              </div>
                              <div className="w-px h-8 bg-slate-600"></div>
                              <div className="text-center">
-                               {pricesLoading ? (
+                               {pricesLoading && !marks[key] ? (
                                  <div className="flex items-center justify-center py-1">
                                    <div className="w-4 h-4 border-2 border-orange-400 border-t-transparent rounded-full animate-spin"></div>
                                  </div>
@@ -438,7 +491,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                              </div>
                              <div className="bg-slate-800/50 rounded-lg p-2">
                                <div className="text-xs text-gray-400 mb-1">Current</div>
-                               {pricesLoading ? (
+                               {pricesLoading && !marks[key] ? (
                                  <div className="flex items-center justify-center py-2">
                                    <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
                                  </div>
@@ -447,10 +500,15 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                                )}
                              </div>
                            </div>
-                           {pricesLoading ? (
+                           {(pricesLoading && !marks[key]) ? (
                              <div className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-gray-900/20 text-gray-400 border border-gray-700/30">
                                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
                                <span>Loading...</span>
+                             </div>
+                           ) : !isPriceValid ? (
+                             <div className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-orange-900/20 text-orange-400 border border-orange-700/30">
+                               <span className="text-lg">⚠️</span>
+                               <span>Price unavailable</span>
                              </div>
                            ) : (
                              <div className={`inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg ${
@@ -469,7 +527,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                            <div className="space-y-2">
                              <div>
                                <div className="text-xs text-gray-400 mb-1">Unrealized P&L</div>
-                               {pricesLoading ? (
+                               {pricesLoading && !marks[key] ? (
                                  <div className="flex items-center justify-center py-2">
                                    <div className="w-5 h-5 border-2 border-green-400 border-t-transparent rounded-full animate-spin"></div>
                                  </div>
@@ -488,7 +546,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
                                </div>
                              )}
                            </div>
-                           {pricesLoading ? (
+                           {pricesLoading && !marks[key] ? (
                              <div className="w-full bg-slate-700/30 rounded-full h-3 flex items-center justify-center">
                                <div className="w-3 h-3 border-2 border-green-400 border-t-transparent rounded-full animate-spin"></div>
                              </div>

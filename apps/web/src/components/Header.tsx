@@ -31,7 +31,7 @@ export default function Header() {
         if (!mounted) return
         const status = response.data
         setMarketStatus(status.market_status || 'CLOSED')
-        setRefreshRate(status.market_status === 'CLOSED' ? 'OFF' : status.refresh_rate || '10s')
+        setRefreshRate((status.market_status === 'CLOSED' || status.market_status === 'PRE_OPEN') ? 'OFF' : status.refresh_rate || '10s')
       } catch (error) {
         console.error('Failed to fetch system status:', error)
         setRefreshRate('OFF')
@@ -59,7 +59,7 @@ export default function Header() {
   }
 
   const getRefreshStatusColor = () => {
-    if (marketStatus === 'CLOSED') return 'bg-gray-500'
+    if (marketStatus === 'CLOSED' || marketStatus === 'PRE_OPEN') return 'bg-gray-500'
     return 'bg-purple-400 animate-pulse'
   }
 
@@ -99,12 +99,12 @@ export default function Header() {
             <div className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full ${getRefreshStatusColor()}`}></div>
             <div className="text-xs sm:text-sm">
               <span className="text-gray-400">Market:</span>
-              <span className={`ml-1 font-medium ${marketStatus === 'CLOSED' ? 'text-gray-500' : 'text-purple-400'}`}>
-                {marketStatus === 'CLOSED' ? 'Closed' : 'Open'}
+              <span className={`ml-1 font-medium ${(marketStatus === 'CLOSED' || marketStatus === 'PRE_OPEN') ? 'text-gray-500' : 'text-purple-400'}`}>
+                {(marketStatus === 'CLOSED' || marketStatus === 'PRE_OPEN') ? 'Closed' : 'Open'}
               </span>
               <span className="text-gray-500 ml-1 sm:ml-2">•</span>
               <span className="text-gray-400 ml-1">Refresh:</span>
-              <span className={`ml-1 font-medium ${marketStatus === 'CLOSED' ? 'text-gray-600' : 'text-purple-400'}`}>
+              <span className={`ml-1 font-medium ${(marketStatus === 'CLOSED' || marketStatus === 'PRE_OPEN') ? 'text-gray-600' : 'text-purple-400'}`}>
                 {refreshRate}
               </span>
             </div>

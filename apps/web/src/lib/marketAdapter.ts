@@ -115,6 +115,20 @@ class ApiAdapter implements MarketAdapter {
 		}
 	}
 	async getLastPrice(ticker: string, exchange: 'NSE'|'BSE'): Promise<number> {
+		try {
+			// First try to get real-time price from Yahoo Finance
+			const realTimeUrl = `${API}/prices/realtime?ticker=${ticker}&exchange=${exchange}`
+			const realTimeResponse = await axios.get(realTimeUrl, { timeout: 3000 })
+
+			if (realTimeResponse.data && realTimeResponse.data.price && realTimeResponse.data.price > 0) {
+				console.log(`✅ Real-time price for ${ticker}: ₹${realTimeResponse.data.price}`)
+				return Number(realTimeResponse.data.price)
+			}
+		} catch (error: any) {
+			console.warn(`⚠️ Real-time price fetch failed for ${ticker}, falling back to candles:`, error?.message || 'Unknown error')
+		}
+
+		// Fallback to candles if real-time fails
 		const c = await this.getCandles(ticker, exchange, '1m', 1)
 		if (!c.length) return 0
 		return Number(c[c.length-1].close)
