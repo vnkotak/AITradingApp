@@ -1,3 +1,4 @@
+from apps.api.cleanup import cleanup_candle_data, get_cleanup_stats
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Literal
@@ -1089,5 +1090,28 @@ def get_system_status():
         "refresh_rate": "10s" if market_status == "OPEN" else "1m" if market_status == "PRE_OPEN" else "5m",
         "data_source": "mock" if db_status != "connected" else "real"
     }
+
+
+@router.post("/cleanup/candles")
+def run_candle_cleanup(dry_run: bool = False):
+    """Manually trigger candle data cleanup"""
+    try:
+        result = cleanup_candle_data(dry_run=dry_run)
+        return {
+            "status": "completed",
+            "dry_run": dry_run,
+            "result": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cleanup error: {str(e)}")
+
+
+@router.get("/cleanup/stats")
+def get_cleanup_statistics():
+    """Get current candle data statistics and cleanup preview"""
+    try:
+        return get_cleanup_stats()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stats error: {str(e)}")
 
 

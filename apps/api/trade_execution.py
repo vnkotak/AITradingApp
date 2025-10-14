@@ -58,16 +58,20 @@ class TradeExecutor:
             signal_rank = timeframe_hierarchy.get(signal_timeframe, 0)
             position_rank = timeframe_hierarchy.get(position_timeframe, 0)
 
-            if action == 'BUY' and position_rank > signal_rank:
-                return False, f"lower_timeframe_buy_ignored_{position_timeframe}"
+            # DISABLE STRICT TIMEFRAME PRECEDENCE FOR BETTER SIGNAL FLOW
+            # if action == 'BUY' and position_rank > signal_rank:
+            #     return False, f"lower_timeframe_buy_ignored_{position_timeframe}"
 
             if action == 'SELL':
-                # SELL signals are more permissive but still check hierarchy
+                # SELL signals check hierarchy but are more permissive than before
                 rank_difference = position_rank - signal_rank
-                if rank_difference <= 1:  # Close timeframe signals always execute
-                    pass
-                elif rank_difference > 3:  # Too far down the hierarchy
+                if rank_difference <= 2:  # Allow same timeframe or one level down
+                    pass  # Allow the sell signal
+                elif rank_difference > 4:  # Too far down the hierarchy (2+ levels down)
                     return False, f"too_low_timeframe_sell_{signal_timeframe}_vs_{position_timeframe}"
+                else:
+                    # Moderate timeframe difference - allow with caution
+                    pass
 
         # Advanced exits (if enabled and we have position and context)
         if self.enable_advanced_exits and current_position['qty'] > 0 and context:
@@ -89,33 +93,32 @@ class TradeExecutor:
         return True, "signal_valid"
 
     def _should_exit_for_profit(self, pnl_pct: float, context: Dict) -> bool:
-        """Smart profit-taking logic"""
+        """RELAXED profit-taking logic - allow more profit capture"""
         # Always take profits at significant levels
-        if pnl_pct >= 10.0:
+        if pnl_pct >= 15.0:  # Increased from 10.0%
             return True
 
-        if pnl_pct >= 5.0:
+        if pnl_pct >= 8.0:  # Increased from 5.0%
             # Check if momentum is still strong
-            if context.get("trend") == "bullish" and context.get("rsi", 50) > 70:
-                return False  # Strong momentum continues
+            if context.get("trend") == "bullish" and context.get("rsi", 50) > 60:  # Lowered from 70
+                return False  # Moderate momentum continues
             else:
                 return True
 
         return False
 
     def _should_exit_for_loss(self, pnl_pct: float, context: Dict) -> bool:
-        """AGGRESSIVE stop loss logic - cut losses much faster"""
+        """RELAXED stop loss logic - allow more breathing room"""
         # Large losses always exit immediately
-        if pnl_pct <= -3.0:  # Tightened from -5.0% to -3.0%
+        if pnl_pct <= -5.0:  # Relaxed from -3.0% back to -5.0%
             return True
 
-        if pnl_pct <= -1.5:  # Tightened from -2.0% to -1.5%
-            # Check if trend is still intact - much stricter
-            if context.get("trend") == "bullish" and context.get("rsi", 50) > 40:  # Higher RSI requirement
-                if context.get("current_price", 0) > context.get("recent_low", 0) * 1.01:  # Tighter pullback allowance
-                    return False
+        if pnl_pct <= -2.5:  # Relaxed from -1.5% to -2.5%
+            # Check if trend is still intact - less strict
+            if context.get("trend") == "bullish" and context.get("rsi", 50) > 30:  # Lower RSI requirement
+                return False
 
-            return True  # Exit on any weakness
+            return True  # Exit on significant weakness
 
         return False
 

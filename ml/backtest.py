@@ -234,7 +234,6 @@ def strategy_signals(df: pd.DataFrame, name: str) -> pd.Series:
         'mean_reversion': mean_reversion,
         'momentum': momentum
     }
-    print("5")
     if name not in strategy_funcs:
         raise ValueError(f"Unknown strategy {name}")
 
@@ -248,11 +247,8 @@ def strategy_signals(df: pd.DataFrame, name: str) -> pd.Series:
 
         try:
             print(i)
-            print("7")
             signal = strat_func(df_subset)
-            print("8")
             if signal and signal_quality_filter(signal, df_subset):
-                print("9")
                 # Apply confidence scoring with updated weights
                 confidence, rationale = score_signal(df_subset, signal.action, signal.confidence, {'ticker': 'TEST', 'exchange': 'NSE'})
                 # Use the same confidence threshold as live trading (0.6)

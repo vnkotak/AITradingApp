@@ -1,0 +1,21 @@
+name: Cleanup Old Candle Data
+
+on:
+  schedule:
+    # Run daily at 2 AM IST (8:30 PM UTC)
+    - cron: '30 20 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Make API request to cleanup
+      run: |
+        curl -X POST "https://aitradingapp.onrender.com/cleanup/candles?dry_run=false" \
+        -H "Content-Type: application/json"
+
+    - name: Log cleanup results
+      run: |
+        echo "Cleanup completed successfully"
