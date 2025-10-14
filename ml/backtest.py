@@ -255,8 +255,6 @@ def strategy_signals(df: pd.DataFrame, name: str) -> pd.Series:
                 print("9")
                 # Apply confidence scoring with updated weights
                 confidence, rationale = score_signal(df_subset, signal.action, signal.confidence, {'ticker': 'TEST', 'exchange': 'NSE'})
-                print("10")
-                print(confidence)
                 # Use the same confidence threshold as live trading (0.6)
                 if confidence >= 0.6:
                     s.iloc[i] = 'BUY' if signal.action == 'BUY' else 'SELL'

@@ -272,7 +272,7 @@ def scan_once(mode: str, force: bool = False, max_symbols: int = 200) -> dict:
     sb = get_client()
     # Record run
     print(f"Mode {mode} - Memory optimized (max {max_symbols} symbols)")
-    run = sb.table("strategy_runs").insert({"mode": mode}).execute().data[0]
+    run = sb.table("strategy_runs").insert({"mode": mode, "symbols_scanned": None, "signals_generated": None}).execute().data[0]
     run_id = run["id"]
     symbols = sb.table("symbols").select("id,ticker,exchange").eq("is_active", True).limit(max_symbols).execute().data
     total_signals = 0
@@ -356,7 +356,7 @@ def scan_once(mode: str, force: bool = False, max_symbols: int = 200) -> dict:
                     "stop": sig.stop,
                     "target": sig.target,
                     "confidence": sig.confidence,
-                    "rationale": {"rationale": sig.rationale, "quality_filtered": True},
+                    "rationale": str({"rationale": sig.rationale, "quality_filtered": True}),  # Convert to string to avoid JSON serialization issues
                 })
 
             if rows:
@@ -380,16 +380,16 @@ def scan_once(mode: str, force: bool = False, max_symbols: int = 200) -> dict:
             model = sb.table("ai_models").select("id").order("created_at", desc=True).limit(1).execute().data[0]
         sb.table("ai_decisions").insert({
             "model_id": model["id"],
-            "weights": ens["weights"],
+            "weights": str(ens["weights"]),  # Convert to string to avoid JSON serialization issues
             "decision": decision_val,
-            "rationale": {"mode": mode, "symbol": ticker},
+            "rationale": str({"mode": mode, "symbol": ticker}),  # Convert to string
         }).execute()
         total_signals += len(rows)
 
         # Memory cleanup after each symbol
         del df, raw_signals, scored, ens, weights
         gc.collect()
-    sb.table("strategy_runs").update({"symbols_scanned": len(symbols or []), "signals_generated": total_signals, "completed_at": datetime.now(timezone.utc).isoformat()}).eq("id", run_id).execute()
+    sb.table("strategy_runs").update({"symbols_scanned": len(symbols or []), "signals_generated": total_signals, "completed_at": datetime.now(timezone.utc).isoformat(), "metadata": str({"delta_updates": delta_updates, "full_refreshes": full_refreshes})}).eq("id", run_id).execute()
 
     print("\n📋 SCAN SUMMARY:")
     print(f"  Total symbols processed: {len(symbols or [])}")
