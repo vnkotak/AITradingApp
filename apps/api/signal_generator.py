@@ -71,14 +71,15 @@ def _sentiment_bias(ticker: str, exchange: str, lookback: int = 3) -> float:
 
 def score_signal(df: pd.DataFrame, action: str, base_conf: float, context: Dict | None = None) -> tuple[float, Dict]:
     feats = _feature_contributions(df)
-    # Simple linear blend; weights chosen heuristically
+    # Adjusted weights for better trend-following and momentum capture
+    # Less restrictive RSI requirements, reduced VWAP penalty for trending markets
     w = {
-        "rsi_bias": 0.8 if action == "BUY" else -0.8,
-        "macd_momentum": 0.7 if action == "BUY" else -0.7,
-        "trend_strength": 0.5,
-        "vwap_premium_atr": -0.6 if action == "BUY" else 0.6,
+        "rsi_bias": 0.4 if action == "BUY" else -0.8,  # Reduced from 0.8 to 0.4 for BUY (less oversold requirement)
+        "macd_momentum": 0.8 if action == "BUY" else -0.7,  # Increased from 0.7 to 0.8 for BUY (more momentum focus)
+        "trend_strength": 0.7,  # Increased from 0.5 (stronger trend preference)
+        "vwap_premium_atr": -0.3 if action == "BUY" else 0.6,  # Reduced from -0.6 to -0.3 for BUY (less VWAP penalty)
         "bb_regime": 0.2,
-        "volume_z": 0.3,
+        "volume_z": 0.4,  # Increased from 0.3 (more volume importance)
     }
     logits = base_conf * 1.5
     contribs: Dict[str, float] = {}

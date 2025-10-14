@@ -123,15 +123,52 @@ class ApiAdapter implements MarketAdapter {
 			if (realTimeResponse.data && realTimeResponse.data.price && realTimeResponse.data.price > 0) {
 				console.log(`✅ Real-time price for ${ticker}: ₹${realTimeResponse.data.price}`)
 				return Number(realTimeResponse.data.price)
+			} else {
+				console.warn(`⚠️ Real-time price returned 0 for ${ticker}, trying fallback`)
 			}
 		} catch (error: any) {
 			console.warn(`⚠️ Real-time price fetch failed for ${ticker}, falling back to candles:`, error?.message || 'Unknown error')
 		}
 
-		// Fallback to candles if real-time fails
-		const c = await this.getCandles(ticker, exchange, '1m', 1)
-		if (!c.length) return 0
-		return Number(c[c.length-1].close)
+		// Enhanced fallback to candles - try multiple timeframes
+		try {
+			// First try 1m candles for most recent price
+			let c = await this.getCandles(ticker, exchange, '1m', 1)
+			if (c.length > 0) {
+				const price = Number(c[c.length-1].close)
+				if (price > 0) {
+					console.log(`✅ Fallback price from 1m candles for ${ticker}: ₹${price}`)
+					return price
+				}
+			}
+
+			// If 1m fails, try 5m candles
+			c = await this.getCandles(ticker, exchange, '5m', 1)
+			if (c.length > 0) {
+				const price = Number(c[c.length-1].close)
+				if (price > 0) {
+					console.log(`✅ Fallback price from 5m candles for ${ticker}: ₹${price}`)
+					return price
+				}
+			}
+
+			// Final fallback to daily candles
+			c = await this.getCandles(ticker, exchange, '1d', 1)
+			if (c.length > 0) {
+				const price = Number(c[c.length-1].close)
+				if (price > 0) {
+					console.log(`✅ Fallback price from daily candles for ${ticker}: ₹${price}`)
+					return price
+				}
+			}
+
+			console.warn(`❌ No valid price found in candles for ${ticker}`)
+			return 0
+
+		} catch (candleError: any) {
+			console.error(`❌ Error fetching fallback candle data for ${ticker}:`, candleError?.message || 'Unknown error')
+			return 0
+		}
 	}
 }
 

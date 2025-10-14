@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Literal
 from apps.api.supabase_client import get_client
-from apps.api.yahoo_client import fetch_yahoo_candles
+from apps.api.yahoo_client import fetch_yahoo_candles, fetch_real_time_quote
 from apps.api.execution import simulate_order, apply_trade_updates
 from apps.api.risk_engine import get_limits, suggest_position_size, should_block_order, apply_trailing_stops
 from apps.api.analytics import pnl_summary
@@ -518,62 +518,83 @@ def fetch_real_market_indices():
     return real_indices
 
 
+def fetch_market_performance_data(limit: int = 100):
+    """Fetch comprehensive market performance data from database symbols for heatmap and top movers"""
+    from apps.api.yahoo_client import fetch_yahoo_candles
+
+    sb = get_client()
+    if not sb:
+        print("⚠️ Database not connected, returning empty market data")
+        return []
+
+    try:
+        # Fetch active symbols from database (limit to avoid too many API calls)
+        symbols = sb.table("symbols").select("ticker,exchange,name,sector").eq("is_active", True).limit(limit).execute().data or []
+
+        if not symbols:
+            print("⚠️ No active symbols found in database")
+            return []
+
+        print(f"📊 Fetching performance data for {len(symbols)} active symbols from database")
+
+        # Fetch real performance data for all symbols
+        stocks_with_data = []
+
+        for symbol in symbols:
+            try:
+                ticker = symbol["ticker"]
+                exchange = symbol["exchange"]
+                name = symbol["name"] or ticker
+                sector = symbol["sector"] or "Unknown"
+
+                # Fetch 2 days of data to calculate daily change
+                candles = fetch_yahoo_candles(ticker, exchange, "1d", 2)
+                if candles and len(candles) >= 2:
+                    current = candles[-1]
+                    previous = candles[-2]
+
+                    change = current["close"] - previous["close"]
+                    change_percent = (change / previous["close"]) * 100 if previous["close"] > 0 else 0
+
+                    stocks_with_data.append({
+                        "ticker": ticker,
+                        "name": name,
+                        "sector": sector,
+                        "exchange": exchange,
+                        "price": round(current["close"], 2),
+                        "change": round(change, 2),
+                        "changePercent": round(change_percent, 2),
+                        "performance": round(change_percent, 2),
+                        "volume": int(current.get("volume", 1000000))
+                    })
+            except Exception as e:
+                print(f"⚠️ Error fetching data for {symbol['ticker']}: {e}")
+                continue
+
+        print(f"✅ Successfully fetched data for {len(stocks_with_data)}/{len(symbols)} symbols")
+        return stocks_with_data
+
+    except Exception as e:
+        print(f"❌ Error fetching market performance data: {e}")
+        return []
+
+
 def fetch_comprehensive_market_heatmap():
-    """Fetch comprehensive market heatmap with sector-wise stock selection"""
-    from apps.api.yahoo_client import fetch_yahoo_candles, fetch_real_time_quote
+    """Fetch comprehensive market heatmap using database symbols"""
+    stocks_data = fetch_market_performance_data(limit=100)
 
-    # Comprehensive sector-wise stock selection for proper market overview
-    sector_stocks = {
-        "🏦 Banking & Financial Services": [
-            {"ticker": "HDFCBANK", "name": "HDFC Bank", "sector": "Private Bank"}
-        ]
-    }
+    if not stocks_data:
+        return []
 
-    # Flatten all stocks for heatmap processing
-    all_stocks = []
-    sector_mapping = {}
-    for sector, stocks in sector_stocks.items():
-        for stock in stocks:
-            all_stocks.append(stock)
-            sector_mapping[stock["ticker"]] = sector
-
-    # Fetch real performance data for all stocks
-    stocks_with_data = []
-
-    for stock in all_stocks:
-        try:
-            candles = fetch_yahoo_candles(stock["ticker"], "NSE", "1d", 2)
-            if candles and len(candles) >= 2:
-                current = candles[-1]
-                previous = candles[-2]
-
-                change = current["close"] - previous["close"]
-                change_percent = (change / previous["close"]) * 100 if previous["close"] > 0 else 0
-
-                stocks_with_data.append({
-                    "ticker": stock["ticker"],
-                    "name": stock["name"],
-                    "sector": stock["sector"],
-                    "sector_group": sector_mapping[stock["ticker"]],
-                    "price": round(current["close"], 2),
-                    "change": round(change, 2),
-                    "changePercent": round(change_percent, 2),
-                    "performance": round(change_percent, 2),
-                    "volume": int(current.get("volume", 1000000))
-                })
-        except Exception as e:
-            print(f"❌ Error fetching heatmap data for {stock['ticker']}: {e}")
-            continue
-
-    # Group by sectors and select top performers from each sector
+    # Group by sectors for heatmap organization
     sector_performance = {}
-    for stock in stocks_with_data:
-        sector = stock["sector_group"]
+    for stock in stocks_data:
+        sector = stock.get("sector", "Unknown")
         if sector not in sector_performance:
             sector_performance[sector] = []
         sector_performance[sector].append(stock)
 
-    # Select top 2-3 stocks from each sector for heatmap
+    # Select top performers from each sector for heatmap
     heatmap_stocks = []
     for sector, stocks in sector_performance.items():
         # Sort by absolute performance and take top performers
@@ -582,6 +603,9 @@ def fetch_comprehensive_market_heatmap():
 
     # Sort final selection by performance for color distribution
     heatmap_stocks.sort(key=lambda x: x["performance"], reverse=True)
+
+    # Limit to reasonable size for UI
+    heatmap_stocks = heatmap_stocks[:25]
 
     print(f"📊 Heatmap: {len(heatmap_stocks)} stocks from {len(sector_performance)} sectors")
     for stock in heatmap_stocks[:5]:  # Show top 5 in logs
@@ -654,20 +678,20 @@ def get_home_overview():
         real_indices = fetch_real_market_indices()
         print(f"✅ Successfully fetched {len(real_indices)} indices")
 
-        # Get real top movers data
-        print("📊 Fetching real top movers from Yahoo Finance...")
-        movers_data = fetch_comprehensive_market_heatmap()
+        # Get comprehensive market performance data (single API call for all data)
+        print("📊 Fetching comprehensive market performance data...")
+        market_performance_data = fetch_market_performance_data(limit=50)  # Smaller limit for overview
 
         # For top gainers/losers, filter and sort the comprehensive data
-        gainers = [s for s in movers_data if s["performance"] > 0]
-        losers = [s for s in movers_data if s["performance"] < 0]
+        gainers = [s for s in market_performance_data if s["performance"] > 0]
+        losers = [s for s in market_performance_data if s["performance"] < 0]
 
         gainers.sort(key=lambda x: x["performance"], reverse=True)
         losers.sort(key=lambda x: x["performance"])  # Most negative first
 
         top_gainers = gainers[:5]
         top_losers = losers[:5]
-        print(f"✅ Successfully fetched {len(top_gainers)} gainers and {len(top_losers)} losers")
+        print(f"✅ Successfully processed {len(market_performance_data)} stocks for top movers")
 
         # Get real market status
         market_status, market_time = get_indian_market_status()
@@ -832,11 +856,6 @@ def get_market_heatmap(limit: int = 20):
     """Get comprehensive market heatmap with sector-wise stock selection"""
     sb = get_client()
 
-    if not sb:
-        # Return mock heatmap data if database not available
-        print("📊 Database not available, using sector-based mock heatmap data")
-        return generate_mock_sector_heatmap(limit)
-
     try:
         # Get comprehensive market heatmap with real data
         print("📊 Fetching comprehensive market heatmap...")
@@ -994,9 +1013,51 @@ def get_real_time_price(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE'):
         if price > 0:
             return {"price": price, "ticker": ticker, "exchange": exchange, "source": "yahoo_realtime"}
         else:
-            raise HTTPException(status_code=404, detail=f"No real-time price available for {ticker}.{exchange}")
+            # Try fallback to stored candles
+            fallback_price = get_latest_price_from_candles(ticker, exchange)
+            if fallback_price > 0:
+                return {"price": fallback_price, "ticker": ticker, "exchange": exchange, "source": "database_candles"}
+            else:
+                raise HTTPException(status_code=404, detail=f"No price available for {ticker}.{exchange}")
     except Exception as e:
+        # Try fallback to stored candles even on error
+        try:
+            fallback_price = get_latest_price_from_candles(ticker, exchange)
+            if fallback_price > 0:
+                return {"price": fallback_price, "ticker": ticker, "exchange": exchange, "source": "database_candles_fallback"}
+        except:
+            pass
         raise HTTPException(status_code=500, detail=f"Error fetching real-time price: {str(e)}")
+
+
+def get_latest_price_from_candles(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE') -> float:
+    """Get the most recent price from stored candles as fallback"""
+    sb = get_client()
+    if not sb:
+        return 0.0
+
+    try:
+        # Get symbol ID
+        sym = sb.table("symbols").select("id").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
+        if not sym:
+            return 0.0
+
+        symbol_id = sym["id"]
+
+        # Try 1m candles first for most recent price
+        for tf in ['1m', '5m', '15m', '1h', '1d']:
+            candles = sb.table("candles").select("close").eq("symbol_id", symbol_id).eq("timeframe", tf).order("ts", desc=True).limit(1).execute().data
+            if candles and len(candles) > 0:
+                price = float(candles[0]["close"])
+                if price > 0:
+                    print(f"✅ Fallback price from {tf} candles for {ticker}: ₹{price}")
+                    return price
+
+        return 0.0
+
+    except Exception as e:
+        print(f"❌ Error fetching fallback price from candles for {ticker}: {e}")
+        return 0.0
 
 
 @router.get("/home/system-status")

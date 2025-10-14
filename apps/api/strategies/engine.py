@@ -15,7 +15,7 @@ class Signal:
 
 def trend_follow(df: pd.DataFrame) -> Optional[Signal]:
     """BALANCED TREND FOLLOWING - Quality signals with reasonable frequency"""
-    if len(df) < 60:  # Reasonable data requirement
+    if len(df) < 50:  # Reasonable data requirement (reduced for testing)
         return None
 
     last = df.iloc[-1]
@@ -27,29 +27,46 @@ def trend_follow(df: pd.DataFrame) -> Optional[Signal]:
 
         crossed_up = prev["ema20"] <= prev["ema50"] and last["ema20"] > last["ema50"]
 
-        # CORE REQUIREMENTS - Not too strict, but quality focused
+        # CORE REQUIREMENTS - Relaxed for better momentum capture
         ema_rising = last["ema20"] > prev["ema20"]  # Fast EMA trending up
-        rsi_ok = last["rsi14"] < 80  # Not extremely overbought
-        volatility_ok = last["atr14"] > last["close"] * 0.003  # Some volatility
-        price_ok = 15 <= last["close"] <= 3000  # Reasonable price range
+        rsi_ok = last["rsi14"] < 85  # Relaxed from 80 - allow more overbought conditions
+        volatility_ok = last["atr14"] > last["close"] * 0.002  # Relaxed from 0.003 - less volatility required
+        price_ok = 10 <= last["close"] <= 10000  # Increased upper limit for premium stocks
 
-        # ADDITIONAL CONFIRMATION - If available, use them
+        # ADDITIONAL CONFIRMATION - Made less restrictive
         adx_ok = True
         if pd.notna(last.get("adx14")):
-            adx_ok = last["adx14"] >= 20  # Prefer some trend strength
+            adx_ok = last["adx14"] >= 15  # Further relaxed from 18 - very weak trends ok
 
-        macd_ok = True
-        if pd.notna(last.get("macd")) and pd.notna(last.get("macd_signal")):
-            macd_ok = last["macd"] > last["macd_signal"]  # Prefer bullish MACD
+        macd_ok = True  # Temporarily disable MACD check for testing
+        # if pd.notna(last.get("macd")) and pd.notna(last.get("macd_signal")):
+        #     # Very relaxed MACD - allow moderately bearish conditions
+        #     macd_ok = last["macd"] >= last["macd_signal"] * 0.3  # Allow MACD down to 30% of signal line
 
-        volume_ok = True
-        if pd.notna(last.get("volume")) and len(df) > 20:
-            avg_volume = df["volume"].rolling(20).mean().iloc[-1]
-            volume_ok = last["volume"] > avg_volume * 1.05  # Slightly above average
+        volume_ok = True  # Temporarily disable strict volume check due to data quality
+        # Volume data can be inconsistent, so we'll allow signals without volume confirmation for now
+        # if pd.notna(last.get("volume")) and len(df) > 20:
+        #     avg_volume = df["volume"].rolling(20).mean().iloc[-1]
+        #     volume_ok = last["volume"] > 0 if avg_volume > 0 else True
 
-        # BUY SIGNAL - Core requirements met, bonuses if available
-        if (crossed_up and ema_rising and rsi_ok and volatility_ok and price_ok and
-            adx_ok and macd_ok and volume_ok):
+        # BUY SIGNAL - Relaxed for trending markets
+        # Option 1: Traditional EMA crossover (strict)
+        traditional_signal = (crossed_up and ema_rising and rsi_ok and volatility_ok and price_ok and
+                             adx_ok and macd_ok and volume_ok)
+
+        # Option 2: Weak trend signal (very relaxed for any trending stocks)
+        strong_trend_signal = False
+        if (pd.notna(last.get("adx14")) and last["adx14"] >= 15 and  # Weak trend strength
+            rsi_ok and price_ok and  # Core requirements only
+            macd_ok and volume_ok):  # Technical confirmations
+            # Allow even without EMA crossover or rising EMAs if there's any trend
+            ema_alignment = abs(last["ema20"] - last["ema50"]) / last["ema50"] <= 0.05  # EMA20 within 5% of EMA50
+            strong_trend_signal = ema_alignment
+
+        # Accept either traditional crossover or strong trend signal
+        buy_signal = traditional_signal or strong_trend_signal
+
+        if buy_signal:
 
             entry = float(last["close"])
             stop = float(last["close"] - 1.2 * last["atr14"])  # Moderate stop

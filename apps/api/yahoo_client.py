@@ -164,6 +164,13 @@ def fetch_real_time_quote(ticker: str, exchange: Literal['NSE','BSE'] = 'NSE') -
             print(f"❌ No quote data available for {yf_symbol}")
             return 0.0
 
+    except requests.exceptions.HTTPError as e:
+        if r.status_code == 404:
+            print(f"⚠️ Symbol {yf_symbol} not found on Yahoo Finance (404)")
+            return 0.0
+        else:
+            print(f"❌ HTTP error fetching real-time quote for {yf_symbol}: {e}")
+            return 0.0
     except Exception as e:
         print(f"❌ Error fetching real-time quote for {yf_symbol}: {e}")
         return 0.0

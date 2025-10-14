@@ -54,13 +54,14 @@ def execute_backtest_trades(start_date: str = "2025-10-06", end_date: str = "202
                     try:
                         # Check if we have data for this symbol and timeframe in our date range
                         data_check = sb.table("candles").select("ts").eq("symbol_id", symbol_id).eq("timeframe", tf).gte("ts", f"{start_date}T00:00:00Z").lte("ts", f"{end_date}T23:59:59Z").limit(1).execute()
-
+                        
                         if not data_check or not data_check.data or len(data_check.data) == 0:
                             continue
 
                         # Load candle data for this timeframe
+                        print("1")
                         candles_data = sb.table("candles").select("ts,open,high,low,close,volume").eq("symbol_id", symbol_id).eq("timeframe", tf).gte("ts", f"{start_date}T00:00:00Z").lte("ts", f"{end_date}T23:59:59Z").order("ts").execute().data
-
+                        print("2")
                         if not candles_data or len(candles_data) < 10:
                             continue
 
@@ -71,15 +72,16 @@ def execute_backtest_trades(start_date: str = "2025-10-06", end_date: str = "202
                             df[k] = pd.to_numeric(df[k], errors='coerce')
                         df["ts"] = pd.to_datetime(df["ts"], utc=True)
                         df = df.dropna().reset_index(drop=True)
-
+                        print("3")
                         # Add indicators
                         df_with_indicators = add_indicators(df)
-                        
+                        print("4")
                         # Generate signals
                         signals = strategy_signals(df_with_indicators, strategy)
-
+                        print("5")
                         # Collect signals with metadata
                         for idx, signal_action in signals.items():
+                            print("6")
                             if pd.notna(signal_action) and signal_action in ['BUY', 'SELL']:
                                 signal_candle = df_with_indicators.iloc[idx]
                                 all_signals.append({
@@ -455,6 +457,6 @@ def execute_signals_chronologically(sb, symbol_id: str, ticker: str, exchange: s
 if __name__ == "__main__":
     # Execute comprehensive backtest for all strategies and timeframes from Sep 20 to present
     execute_backtest_trades(
-        start_date="2025-10-08",  # Extended date range from September 20
-        end_date="2025-10-08"    # To present (October 4)
+        start_date="2025-10-10",  # Extended date range from September 20
+        end_date="2025-10-10"    # To present (October 4)
     )

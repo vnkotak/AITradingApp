@@ -11,9 +11,10 @@ from supabase import create_client
 import os
 import sys
 
-# Import live strategy engine
+# Import live strategy engine and signal generation
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'apps', 'api'))
 from strategies.engine import trend_follow, mean_reversion, momentum, signal_quality_filter, Signal
+from signal_generator import score_signal, ScoredSignal
 
 
 Timeframe = Literal['1m','5m','15m','1h','1d']
@@ -224,7 +225,7 @@ class BTTrade:
 
 
 def strategy_signals(df: pd.DataFrame, name: str) -> pd.Series:
-    """Use live strategy engine for signal generation"""
+    """Use live strategy engine with confidence scoring for signal generation"""
     s = pd.Series(index=df.index, dtype='object')
 
     # Map strategy names to functions
@@ -233,21 +234,32 @@ def strategy_signals(df: pd.DataFrame, name: str) -> pd.Series:
         'mean_reversion': mean_reversion,
         'momentum': momentum
     }
-
+    print("5")
     if name not in strategy_funcs:
         raise ValueError(f"Unknown strategy {name}")
 
     strat_func = strategy_funcs[name]
 
-    # Generate signals using live strategy logic
+    # Generate signals using live strategy logic with confidence scoring
+    print(len(df))
     for i in range(len(df)):
         # Use cumulative data up to current point
         df_subset = df.iloc[:i+1]
 
         try:
+            print(i)
+            print("7")
             signal = strat_func(df_subset)
+            print("8")
             if signal and signal_quality_filter(signal, df_subset):
-                s.iloc[i] = 'BUY' if signal.action == 'BUY' else 'SELL'
+                print("9")
+                # Apply confidence scoring with updated weights
+                confidence, rationale = score_signal(df_subset, signal.action, signal.confidence, {'ticker': 'TEST', 'exchange': 'NSE'})
+                print("10")
+                print(confidence)
+                # Use the same confidence threshold as live trading (0.6)
+                if confidence >= 0.6:
+                    s.iloc[i] = 'BUY' if signal.action == 'BUY' else 'SELL'
         except Exception:
             continue
 

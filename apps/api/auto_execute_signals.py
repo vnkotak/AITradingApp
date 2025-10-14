@@ -414,8 +414,8 @@ def main():
     parser = argparse.ArgumentParser(description='Auto-execute trading signals for paper trading')
     parser.add_argument('--tf', '--timeframe', default='1m',
                        help='Timeframe(s) to process signals for (comma-separated)')
-    parser.add_argument('--confidence', type=float, default=0.7,
-                       help='Minimum confidence threshold (0.0-1.0)')
+    parser.add_argument('--confidence', type=float, default=0.6,
+                        help='Minimum confidence threshold (0.0-1.0)')
     parser.add_argument('--api-url', default='http://localhost:8000',
                        help='API base URL')
     parser.add_argument('--dry-run', action='store_true',

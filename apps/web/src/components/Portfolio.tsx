@@ -159,7 +159,7 @@ export default function Portfolio({ isVisible = true }: { isVisible?: boolean })
           if (price > 0.01) {  // Minimum valid price threshold
             kv[key] = price
           } else {
-            console.warn(`⚠️ Skipping invalid price for ${key}: ${price}`)
+            console.warn(`⚠️ No valid price available for ${key}: ${price} (real-time fetch failed, candle fallback unsuccessful)`)
             // Use avg price as fallback for display, but mark as invalid
             kv[key] = -1  // Special marker for invalid price
           }

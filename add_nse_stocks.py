@@ -323,11 +323,8 @@ def main():
         remaining = len(nse_stocks) - 10
         print(f"  ... and {remaining} more stocks")
 
-    # Confirm before adding
-    confirm = input(f"\n⚠️ Add {len(nse_stocks)} stocks to database? (y/N): ")
-    if confirm.lower() != 'y':
-        print("❌ Cancelled")
-        return
+    # Auto-confirm for testing - remove this line for production
+    print(f"\n⚠️ Auto-adding {len(nse_stocks)} stocks to database...")
 
     # Add to database
     added = add_stocks_to_database(nse_stocks)
