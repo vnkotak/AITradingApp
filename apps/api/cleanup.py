@@ -53,8 +53,8 @@ def cleanup_candle_data(dry_run: bool = False) -> Dict:
             cutoff_date = now - timedelta(days=days)
             cutoff_iso = cutoff_date.isoformat()
 
-            # Count records that would be deleted
-            count_query = sb.table("candles").select("id", count="exact").eq("timeframe", timeframe).lt("ts", cutoff_iso)
+            # Count records that would be deleted (use ts column since candles table has no id column)
+            count_query = sb.table("candles").select("ts", count="exact").eq("timeframe", timeframe).lt("ts", cutoff_iso)
             count_result = count_query.execute()
             records_to_delete = count_result.count if hasattr(count_result, 'count') else 0
 
@@ -115,8 +115,8 @@ def get_cleanup_stats() -> Dict:
 
     for tf in timeframes:
         try:
-            # Get total count for timeframe
-            total_query = sb.table("candles").select("id", count="exact").eq("timeframe", tf)
+            # Get total count for timeframe (use ts column since candles table has no id column)
+            total_query = sb.table("candles").select("ts", count="exact").eq("timeframe", tf)
             total_result = total_query.execute()
             total_count = total_result.count if hasattr(total_result, 'count') else 0
 
@@ -132,7 +132,7 @@ def get_cleanup_stats() -> Dict:
 
             # Count old records (>30 days for all timeframes as benchmark)
             thirty_days_ago = (now - timedelta(days=30)).isoformat()
-            old_query = sb.table("candles").select("id", count="exact").eq("timeframe", tf).lt("ts", thirty_days_ago)
+            old_query = sb.table("candles").select("ts", count="exact").eq("timeframe", tf).lt("ts", thirty_days_ago)
             old_result = old_query.execute()
             old_count = old_result.count if hasattr(old_result, 'count') else 0
 
