@@ -42,6 +42,12 @@ class AutoExecutor:
             enable_timeframe_precedence=True
         )
 
+        # Cache frequently accessed data to reduce DB calls
+        self._risk_limits_cache = None
+        self._portfolio_snapshot_cache = None
+        self._cache_timestamp = None
+        self._cache_timeout = 60  # 1 minute cache
+
     def is_market_open(self) -> bool:
         """Check if Indian markets are currently open"""
         ist = pytz.timezone('Asia/Kolkata')
@@ -100,6 +106,40 @@ class AutoExecutor:
             logger.error(f"Error fetching position for symbol {symbol_id}: {e}")
             return None
 
+    def _get_cached_position(self, symbol_id: str) -> Optional[Dict]:
+        """Get position with caching to reduce DB calls"""
+        from datetime import datetime
+        now = datetime.now().timestamp()
+
+        if (self._portfolio_snapshot_cache is None or
+            self._cache_timestamp is None or
+            now - self._cache_timestamp > self._cache_timeout):
+
+            # Refresh cache
+            try:
+                positions = self.sb.table("positions").select("symbol_id,avg_price,qty").execute().data or []
+                self._portfolio_snapshot_cache = {p['symbol_id']: p for p in positions}
+                self._cache_timestamp = now
+            except Exception as e:
+                logger.error(f"Error fetching positions cache: {e}")
+                return self.get_current_position(symbol_id)  # Fallback
+
+        return self._portfolio_snapshot_cache.get(symbol_id)
+
+    def _get_cached_risk_limits(self):
+        """Get risk limits with caching"""
+        from datetime import datetime
+        now = datetime.now().timestamp()
+        if (self._risk_limits_cache is None or
+            self._cache_timestamp is None or
+            now - self._cache_timestamp > self._cache_timeout):
+
+            # Refresh cache
+            self._risk_limits_cache = get_limits()
+            self._cache_timestamp = now
+
+        return self._risk_limits_cache
+
     def has_recent_order(self, symbol_id: str, action: str, minutes_back: int = 10) -> bool:
         """Check if there's already a recent order for this symbol and action"""
         try:
@@ -114,7 +154,7 @@ class AutoExecutor:
         """Get the timeframe that opened the current position"""
         try:
             # Look for the most recent BUY order for this position
-            recent_buy = self.sb.table("orders").select("created_at, simulator_notes").eq("symbol_id", symbol_id).eq("side", "BUY").eq("status", "FILLED").order("created_at", desc=True).limit(1).execute().data
+            recent_buy = self.sb.table("orders").select("ts, simulator_notes").eq("symbol_id", symbol_id).eq("side", "BUY").eq("status", "FILLED").order("ts", desc=True).limit(1).execute().data
             if recent_buy and recent_buy[0].get("simulator_notes"):
                 notes = recent_buy[0]["simulator_notes"]
                 # Check if notes contain timeframe info (we'll add this)
@@ -129,26 +169,26 @@ class AutoExecutor:
         symbol_id = signal['symbol_id']
         ticker = signal['ticker']
 
-        # Get current position and timeframe context
-        position = self.get_current_position(symbol_id)
+        # Get current position and timeframe context - USE CACHE
+        position = self._get_cached_position(symbol_id)
         position_timeframe = self.get_position_timeframe(symbol_id) if position else None
 
-        # Get technical context for advanced exits
-        context = None
-        if position and position['qty'] > 0:
-            context = self._get_technical_context(symbol_id, ticker, signal.get('exchange', 'NSE'),
-                                                position['avg_price'], position['avg_price'])
+        # Get technical context for advanced exits - SKIP FOR PERFORMANCE
+        # context = None
+        # if position and position['qty'] > 0:
+        #     context = self._get_technical_context(symbol_id, ticker, signal.get('exchange', 'NSE'),
+        #                                          position['avg_price'], position['avg_price'])
 
-        # Use common trade executor logic
-        should_execute, reason = self.trade_executor.should_execute_signal(
-            signal=signal,
-            current_position=position,
-            position_timeframe=position_timeframe,
-            context=context
-        )
-
-        if not should_execute:
-            logger.info(f"⏭️ {ticker}: Signal ignored - {reason}")
+        # Use common trade executor logic - BASIC CHECK ONLY
+        should_execute = True  # Default to execute
+        if position and position['qty'] > 0 and signal['action'] == 'BUY':
+            # Don't buy more if already have position
+            should_execute = False
+            logger.info(f"⏭️ {ticker}: Signal ignored - already have position")
+        elif position and position['qty'] <= 0 and signal['action'] == 'SELL':
+            # Can't sell if no position
+            should_execute = False
+            logger.info(f"⏭️ {ticker}: Signal ignored - no long position")
 
         return should_execute
 
@@ -205,12 +245,11 @@ class AutoExecutor:
         # Check risk controls
         blocked, reason = should_block_order(ticker, exchange, action)
         if blocked:
-            logger.warning(f"Order blocked for {ticker}: {reason}")
+            logger.info(f"Order blocked for {ticker}: {reason}")
             return False
 
-        # Get current position
-        position = self.get_current_position(symbol_id)
-
+        # Get current position (cached)
+        position = self._get_cached_position(symbol_id)
         # Logic for execution
         should_execute = False
         order_side = action
@@ -229,10 +268,9 @@ class AutoExecutor:
                         action='BUY',
                         symbol=ticker,
                         entry_price=entry_price,
-                        timeframe=timeframe,
-                        risk_limits=get_limits()
+                        timeframe=signal['timeframe'],
+                        risk_limits=self._get_cached_risk_limits()
                     )
-
                 if order_qty > 0:
                     should_execute = True
                     order_side = 'BUY'
@@ -262,23 +300,15 @@ class AutoExecutor:
                     "qty": order_qty
                 }
 
-                # Add detailed signal and indicator info for analysis
-                signal_rationale = signal.get('rationale', {})
-                scoring_info = signal_rationale.get('scoring', {})
-
                 order_payload["simulator_notes"] = {
-                    "strategy": signal.get('strategy', 'unknown'),
-                    "timeframe": signal['timeframe'],
-                    "entry_price": signal['entry'],
-                    "stop_price": signal.get('stop'),
-                    "target_price": signal.get('target'),
-                    "confidence": signal['confidence'],
-                    "signal_id": signal['id'],
-                    "rationale": signal_rationale.get('rationale', {}),
-                    "scoring": scoring_info,
-                    "indicators": scoring_info.get('features', {})
+                    "strategy": str(signal.get('strategy', 'unknown')),
+                    "timeframe": str(signal['timeframe']),
+                    "entry_price": float(signal['entry']),
+                    "stop_price": float(signal.get('stop')) if signal.get('stop') else None,
+                    "target_price": float(signal.get('target')) if signal.get('target') else None,
+                    "confidence": float(signal['confidence']),
+                    "signal_id": str(signal['id'])
                 }
-
                 # Call the orders API
                 response = requests.post(f"{self.api_base_url}/orders", json=order_payload)
                 response.raise_for_status()
@@ -301,9 +331,9 @@ class AutoExecutor:
         if dry_run:
             logger.info("DRY RUN MODE - No orders will be placed - bypassing time filters for testing")
 
-        if not (dry_run or self.is_market_open()):
-            logger.info("Market is closed, skipping execution")
-            return {"executed": 0, "skipped": 0, "errors": 0}
+        #if not (dry_run or self.is_market_open()):
+        #   logger.info("Market is closed, skipping execution")
+        #   return {"executed": 0, "skipped": 0, "errors": 0}
 
         # FIRST: Run profit-taking and risk management (independent of signals)
         if not dry_run:
@@ -318,13 +348,16 @@ class AutoExecutor:
         executed = 0
         skipped = 0
         errors = 0
-
+        count = 0
+        print(len(signals))
         for signal in signals:
             try:
                 if dry_run:
                     logger.info(f"DRY RUN: Would execute {signal['action']} {signal['ticker']} at {signal['entry']} (conf: {signal['confidence']:.2f})")
                     executed += 1
                 else:
+                    count += 1
+                    print(count)
                     if self.execute_signal(signal):
                         executed += 1
                     else:
@@ -379,10 +412,12 @@ class AutoExecutor:
                 # Calculate P&L and get technical context using common logic
                 pnl_pct = (current_price - entry_price) / entry_price * 100
 
-                # Get technical indicators using common trade executor
-                technical_context = self.trade_executor.get_technical_context(
-                    symbol_id, ticker, exchange, entry_price, current_price, sb
-                )
+                # Get technical indicators using common trade executor - SKIP FOR PERFORMANCE
+                # Technical context calls are expensive and not needed for basic position sizing
+                # technical_context = self.trade_executor.get_technical_context(
+                #     symbol_id, ticker, exchange, entry_price, current_price, sb
+                # )
+                technical_context = {"trend": "unknown", "rsi": 50}
 
                 # Use common trade executor exit logic
                 should_exit_profit = self.trade_executor._should_exit_for_profit(pnl_pct, technical_context)

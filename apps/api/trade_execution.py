@@ -247,7 +247,7 @@ class TradeExecutor:
             return {"trend": "unknown", "rsi": 50, "volume_trend": "neutral", "reason": "error"}
 
     def calculate_position_size(self, action: str, symbol: str, entry_price: float,
-                               timeframe: str = '1m', risk_limits: Dict = None,
+                               timeframe: str = '1m', risk_limits = None,
                                portfolio_value: float = None, confidence: float = 0.8) -> int:
         """
         Calculate position size based on portfolio value, timeframe, confidence, and risk limits.
@@ -288,7 +288,11 @@ class TradeExecutor:
             target_value = risk_amount
         else:
             # Fallback to fixed position sizing
-            base_target_value = risk_limits.get('max_position_value', 10000)
+            if hasattr(risk_limits, 'get'):
+                base_target_value = risk_limits.get('max_position_value', 10000)
+            else:
+                # Handle RiskLimitsCfg dataclass
+                base_target_value = 10000  # Default fallback
 
             # Timeframe-based position sizing
             timeframe_multipliers = {

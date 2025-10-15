@@ -451,6 +451,6 @@ def execute_signals_chronologically(sb, symbol_id: str, ticker: str, exchange: s
 if __name__ == "__main__":
     # Execute comprehensive backtest for all strategies and timeframes from Sep 20 to present
     execute_backtest_trades(
-        start_date="2025-10-14",  # Extended date range from September 20
-        end_date="2025-10-14"    # To present (October 4)
+        start_date="2025-10-15",  # Extended date range from September 20
+        end_date="2025-10-15"    # To present (October 4)
     )

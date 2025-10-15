@@ -13,7 +13,7 @@ jobs:
     steps:
     - name: Make API request to cleanup
       run: |
-        curl -X POST "https://aitradingapp.onrender.com/cleanup/candles?dry_run=false" \
+        curl -X POST "https://aitradingapp.onrender.com/cleanup/candles?dry_run=true" \
         -H "Content-Type: application/json"
 
     - name: Log cleanup results

@@ -292,6 +292,10 @@ def place_order(req: OrderRequest):
     symbol_id = sym["id"]
     # Simulate
     fill = simulate_order(symbol_id, req.side, req.type, req.qty, req.price)
+
+    # Ensure simulator_notes is a dict, not a string
+    notes = fill.notes if isinstance(fill.notes, dict) else {}
+
     order_row = {
         "symbol_id": symbol_id,
         "side": req.side,
@@ -300,7 +304,7 @@ def place_order(req: OrderRequest):
         "qty": req.qty,
         "status": fill.status,
         "slippage_bps": fill.slippage_bps,
-        "simulator_notes": fill.notes,
+        "simulator_notes": notes,
     }
     order = sb.table("orders").insert(order_row).execute().data[0]
     if fill.status == 'FILLED' and fill.fill_price is not None and fill.filled_qty > 0:

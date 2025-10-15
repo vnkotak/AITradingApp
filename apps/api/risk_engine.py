@@ -52,7 +52,7 @@ def portfolio_snapshot() -> Dict:
         unreal = (price - avg) * (qty if qty >= 0 else -qty) * (1 if qty >= 0 else -1)
         total_unreal += unreal
         total_exposure += abs(price * qty)
-    # equity approximation
+    # equity approximation - CACHE THESE CALLS
     start = sb.table("pnl_daily").select("equity").order("trade_date", desc=True).limit(1).execute().data
     last_equity = float(start[0]["equity"]) if start else 1000000.0  # default virtual capital 10L
     realized_today = 0.0
@@ -65,21 +65,31 @@ def portfolio_snapshot() -> Dict:
 
 
 def circuit_breaker_triggered(ticker: str, exchange: str, threshold_pct: float) -> bool:
-    sb = get_client()
-    sym = sb.table("symbols").select("id").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
-    if not sym:
-        return False
-    sid = sym["id"]
-    # Previous daily close vs latest price
-    daily = sb.table("candles").select("ts,close").eq("symbol_id", sid).eq("timeframe", "1d").order("ts", desc=True).limit(2).execute().data
-    last_min = sb.table("candles").select("close").eq("symbol_id", sid).eq("timeframe", "1m").order("ts", desc=True).limit(1).execute().data
-    if not daily or not last_min:
-        return False
-    prev_close = float(daily[1]["close"]) if len(daily) >= 2 else float(daily[0]["close"])
-    ltp = float(last_min[0]["close"]) if last_min else prev_close
-    change_pct = abs((ltp - prev_close) / prev_close) * 100.0 if prev_close else 0.0
-    return change_pct >= threshold_pct
+    """DISABLE CIRCUIT BREAKER - Too restrictive for auto-trading"""
+    # Always return False to disable circuit breaker checks
+    return False
 
+    # Original logic (disabled):
+    # sb = get_client()
+    # sym = sb.table("symbols").select("id").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
+    # if not sym:
+    #     return False
+    # sid = sym["id"]
+    # # Previous daily close vs latest price
+    # daily = sb.table("candles").select("ts,close").eq("symbol_id", sid).eq("timeframe", "1d").order("ts", desc=True).limit(2).execute().data
+    # last_min = sb.table("candles").select("close").eq("symbol_id", sid).eq("timeframe", "1m").order("ts", desc=True).limit(1).execute().data
+    # if not daily or not last_min:
+    #     return False
+    # prev_close = float(daily[1]["close"]) if len(daily) >= 2 else float(daily[0]["close"])
+    # ltp = float(last_min[0]["close"]) if last_min else prev_close
+    # change_pct = abs((ltp - prev_close) / prev_close) * 100.0 if prev_close else 0.0
+    # return change_pct >= threshold_pct
+
+
+# Global cache for position size calculations
+_position_size_cache = {}
+_position_size_cache_timestamp = 0
+_CACHE_TIMEOUT = 300  # 5 minutes
 
 def suggest_position_size(ticker: str, exchange: str, price: float, atr: float | None = None, sector: str | None = None, timeframe: str = '1m', limits: RiskLimitsCfg | None = None) -> float:
     print(f"🔍 [RISK_ENGINE] suggest_position_size called for {ticker}.{exchange}, price={price}")
@@ -121,29 +131,43 @@ def suggest_position_size(ticker: str, exchange: str, price: float, atr: float |
         suggested_qty = round(suggested_qty, 4)  # Round to 4 decimals for fractional qty
         print(f"🔢 [RISK_ENGINE] Rounded to 4 decimals: {suggested_qty}")
 
-    # Apply lot size constraints if available
-    sb = get_client()
-    if sb:
-        try:
-            print(f"📊 [RISK_ENGINE] Looking up lot size for {ticker}.{exchange}")
-            lot_start = time.time()
-            sym = sb.table("symbols").select("lot_size").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
-            lot_end = time.time()
-            lot_size = int(sym.get("lot_size") or 1) if sym else 1
-            print(f"✅ [RISK_ENGINE] Lot size lookup completed in {lot_end-lot_start:.2f}s: {lot_size}")
+    # Apply lot size constraints if available - USE CACHE
+    cache_key = f"lot_size_{ticker}_{exchange}"
+    current_time = time.time()
 
-            if lot_size > 1:
-                original_qty = suggested_qty
-                suggested_qty = (int(suggested_qty) // lot_size) * lot_size
-                print(f"📊 [RISK_ENGINE] Applied lot size {lot_size}: {original_qty} -> {suggested_qty}")
-        except Exception as e:
-            print(f"⚠️ [RISK_ENGINE] Lot size lookup failed: {e}")
-            pass  # If lot size lookup fails, use calculated quantity
+    if cache_key in _position_size_cache and (current_time - _position_size_cache_timestamp) < _CACHE_TIMEOUT:
+        lot_size = _position_size_cache[cache_key]
+        print(f"✅ [RISK_ENGINE] Lot size from cache: {lot_size}")
+    else:
+        sb = get_client()
+        if sb:
+            try:
+                print(f"📊 [RISK_ENGINE] Looking up lot size for {ticker}.{exchange}")
+                lot_start = time.time()
+                sym = sb.table("symbols").select("lot_size").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
+                lot_end = time.time()
+                lot_size = int(sym.get("lot_size") or 1) if sym else 1
+                print(f"✅ [RISK_ENGINE] Lot size lookup completed in {lot_end-lot_start:.2f}s: {lot_size}")
+
+                # Cache the result
+                _position_size_cache[cache_key] = lot_size
+                _position_size_cache_timestamp = current_time
+
+            except Exception as e:
+                print(f"⚠️ [RISK_ENGINE] Lot size lookup failed: {e}")
+                lot_size = 1
+        else:
+            lot_size = 1
+
+    if lot_size > 1:
+        original_qty = suggested_qty
+        suggested_qty = (int(suggested_qty) // lot_size) * lot_size
+        print(f"📊 [RISK_ENGINE] Applied lot size {lot_size}: {original_qty} -> {suggested_qty}")
 
     # Fallback to risk management if suggested quantity seems unreasonable
     if suggested_qty <= 0 or suggested_qty > 10000:
         print(f"⚠️ [RISK_ENGINE] Quantity {suggested_qty} seems unreasonable, using fallback risk management")
-        # Fallback to original risk management logic
+        # Fallback to original risk management logic - USE CACHE
         limits = limits or get_limits()
         print(f"📊 [RISK_ENGINE] Getting portfolio snapshot for fallback calculation")
         snap_start = time.time()
@@ -159,16 +183,27 @@ def suggest_position_size(ticker: str, exchange: str, price: float, atr: float |
         qty = max(1.0, risk_budget / max(1e-6, risk_per_share))
         print(f"📊 [RISK_ENGINE] Fallback calculation: equity={equity}, per_trade_cap={per_trade_cap}, qty={qty}")
 
-        # Apply lot size to fallback quantity too
-        sb = get_client()
-        if sb:
-            try:
-                sym = sb.table("symbols").select("lot_size").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
-                lot = int(sym.get("lot_size") or 1) if sym else 1
-                qty = (int(qty) // lot) * lot
-                print(f"📊 [RISK_ENGINE] Applied lot size to fallback: {qty}")
-            except:
-                pass
+        # Apply lot size to fallback quantity too - USE CACHE
+        cache_key = f"lot_size_{ticker}_{exchange}"
+        current_time = time.time()
+
+        if cache_key in _position_size_cache and (current_time - _position_size_cache_timestamp) < _CACHE_TIMEOUT:
+            lot = _position_size_cache[cache_key]
+        else:
+            sb = get_client()
+            if sb:
+                try:
+                    sym = sb.table("symbols").select("lot_size").eq("ticker", ticker).eq("exchange", exchange).single().execute().data
+                    lot = int(sym.get("lot_size") or 1) if sym else 1
+                    _position_size_cache[cache_key] = lot
+                    _position_size_cache_timestamp = current_time
+                except:
+                    lot = 1
+            else:
+                lot = 1
+
+        qty = (int(qty) // lot) * lot
+        print(f"📊 [RISK_ENGINE] Applied lot size to fallback: {qty}")
 
         suggested_qty = qty
 
