@@ -34,7 +34,12 @@ logger = logging.getLogger(__name__)
 
 class AutoExecutor:
     def __init__(self, api_base_url: str = "http://localhost:8000"):
-        self.api_base_url = api_base_url
+        # Auto-detect production environment like scanner does
+        import os
+        if os.getenv('RENDER') or os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('PRODUCTION'):
+            self.api_base_url = "https://aitradingapp.onrender.com"
+        else:
+            self.api_base_url = api_base_url
         self.sb = get_client()
         # Use common trade execution logic with all features enabled
         self.trade_executor = TradeExecutor(
