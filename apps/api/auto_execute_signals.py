@@ -347,7 +347,7 @@ class AutoExecutor:
             logger.info("DRY RUN: Skipping profit-taking cycle")
 
         # SECOND: Process signals
-        hours_back = minutes_back/60.0 if not dry_run else 24.0  # 24 hours for dry run testing
+        hours_back =24 #  minutes_back/60.0 if not dry_run else 24.0  # 24 hours for dry run testing
         signals = self.get_recent_signals(timeframe, confidence_threshold, hours_back=hours_back)
 
         executed = 0
