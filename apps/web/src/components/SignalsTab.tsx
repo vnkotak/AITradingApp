@@ -328,7 +328,7 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
         )}
 
         {/* Signals display with smooth animations */}
-        <div className="space-y-3 sm:space-y-4 max-h-[calc(100vh-400px)] overflow-auto">
+        <div className="space-y-3 sm:space-y-4 max-h-[calc(100vh-50px)] overflow-auto">
           {loading ? (
             // Beautiful skeleton loading with shimmer effect
             <div className="space-y-3 sm:space-y-4">
@@ -471,20 +471,15 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
          )}
        </div>
 
-       {/* Footer with real-time status */}
-       <div className="mt-4 sm:mt-6 bg-slate-800/30 backdrop-blur-sm rounded-2xl p-3 sm:p-4 border border-slate-700/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
-         <div className="text-xs sm:text-sm text-gray-300">
-           {data && `Showing ${data.length} signal${data.length !== 1 ? 's' : ''}`}
+       {/* Footer with real-time status - only show when updating */}
+       {isBackgroundUpdating && (
+         <div className="mt-4 sm:mt-6 bg-slate-800/30 backdrop-blur-sm rounded-2xl p-3 sm:p-4 border border-slate-700/30 flex items-center justify-center">
+           <div className="flex items-center gap-2 text-blue-400">
+             <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+             <span className="text-xs sm:text-sm">Live updates active</span>
+           </div>
          </div>
-         <div className="flex items-center gap-2">
-           {isBackgroundUpdating && (
-             <div className="flex items-center gap-2 text-blue-400">
-               <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-               <span className="text-xs sm:text-sm">Live updates active</span>
-             </div>
-           )}
-         </div>
-       </div>
+       )}
      </div>
    </div>
  )
