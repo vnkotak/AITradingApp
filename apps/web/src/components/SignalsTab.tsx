@@ -184,33 +184,33 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-indigo-900 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-indigo-900 p-4 sm:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header with controls */}
-        <div className="bg-slate-800/30 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/30 mb-6">
-          <div className="flex items-center gap-2 mb-6">
+        <div className="bg-slate-800/30 backdrop-blur-sm rounded-2xl p-4 sm:p-6 border border-slate-700/30 mb-4 sm:mb-6">
+          <div className="flex items-center gap-2 mb-4 sm:mb-6">
             <div className="w-2 h-8 bg-purple-500 rounded-full"></div>
-            <h2 className="text-2xl font-bold text-white">AI Trading Signals</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-white">AI Trading Signals</h2>
           </div>
 
-          <div className="grid lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             {/* Controls */}
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
                   <label className="block text-sm text-gray-300 mb-2">Symbol</label>
                   <input
-                    className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none"
+                    className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none text-sm sm:text-base"
                     value={ticker}
                     placeholder="e.g. TCS, RELIANCE"
                     onChange={e => setTicker(e.target.value.toUpperCase())}
                   />
                 </div>
 
-                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
                   <label className="block text-sm text-gray-300 mb-2">Exchange</label>
                   <select
-                    className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white focus:border-purple-500 focus:outline-none"
+                    className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white focus:border-purple-500 focus:outline-none text-sm sm:text-base"
                     value={exchange}
                     onChange={e => setExchange(e.target.value as any)}
                   >
@@ -219,10 +219,10 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
                   </select>
                 </div>
 
-                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10 sm:col-span-2 lg:col-span-1">
                   <label className="block text-sm text-gray-300 mb-2">Timeframe</label>
                   <select
-                    className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white focus:border-purple-500 focus:outline-none"
+                    className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white focus:border-purple-500 focus:outline-none text-sm sm:text-base"
                     value={tf}
                     onChange={e => setTf(e.target.value)}
                   >
@@ -254,20 +254,20 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
             </div>
 
             {/* Live Status */}
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white">Live Status</h3>
+            <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+              <div className="flex items-center justify-between mb-3 sm:mb-4">
+                <h3 className="text-base sm:text-lg font-semibold text-white">Live Status</h3>
                 <div className="flex items-center gap-2">
                   {isBackgroundUpdating && (
                     <div className="flex items-center gap-2 text-blue-400">
                       <div className="w-2 h-2 bg-blue-400 rounded-full live-indicator"></div>
-                      <span className="text-sm">Live Updates</span>
+                      <span className="text-xs sm:text-sm">Live Updates</span>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="space-y-3 text-sm">
+              <div className="space-y-2 sm:space-y-3 text-xs sm:text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-300">Last Update:</span>
                   <span className="text-white">
@@ -289,15 +289,15 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
 
         {/* Error display */}
         {error && (
-          <div className="mb-6">
-            <div className="bg-red-900/20 border border-red-800/50 rounded-2xl p-6 text-red-400">
-              <div className="flex items-center gap-2 mb-4">
+          <div className="mb-4 sm:mb-6">
+            <div className="bg-red-900/20 border border-red-800/50 rounded-2xl p-4 sm:p-6 text-red-400">
+              <div className="flex items-center gap-2 mb-3 sm:mb-4">
                 <div className="w-2 h-6 bg-red-500 rounded-full"></div>
-                <span className="text-lg font-semibold">Configuration Error</span>
+                <span className="text-base sm:text-lg font-semibold">Configuration Error</span>
               </div>
-              <div className="text-sm mb-4">{error}</div>
+              <div className="text-sm mb-3 sm:mb-4">{error}</div>
               {!dbConfigured && (
-                <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+                <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4 border border-slate-700/50">
                   <div className="text-sm font-medium mb-3 text-gray-200">To fix this, configure your database:</div>
                   <div className="text-xs space-y-2 text-gray-300">
                     <div className="flex items-center gap-2">
@@ -328,39 +328,39 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
         )}
 
         {/* Signals display with smooth animations */}
-        <div className="space-y-4 max-h-[calc(100vh-400px)] overflow-auto">
-         {loading ? (
-           // Beautiful skeleton loading with shimmer effect
-           <div className="space-y-4">
-             {[1, 2, 3].map(i => (
-               <div key={i} className="bg-slate-800/30 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/30">
-                 <div className="skeleton-shimmer">
-                   <div className="flex justify-between mb-4">
-                     <div className="h-5 bg-slate-700 rounded w-32"></div>
-                     <div className="h-4 bg-slate-700 rounded w-20"></div>
-                   </div>
-                   <div className="grid grid-cols-3 gap-4 mb-4">
-                     <div className="h-4 bg-slate-700 rounded w-24"></div>
-                     <div className="h-4 bg-slate-700 rounded w-24"></div>
-                     <div className="h-4 bg-slate-700 rounded w-24"></div>
-                   </div>
-                   <div className="flex justify-between">
-                     <div className="h-4 bg-slate-700 rounded w-28"></div>
-                     <div className="h-4 bg-slate-700 rounded w-20"></div>
-                   </div>
-                 </div>
-               </div>
-             ))}
-           </div>
-         ) : (data || []).length === 0 ? (
-           <div className="bg-slate-800/30 backdrop-blur-sm rounded-2xl p-12 border border-slate-700/30 text-center">
-             <div className="text-4xl mb-4">📊</div>
-             <div className="text-xl text-gray-300 mb-2">
-               {ticker ? `No signals found for ${ticker}` : 'No signals available'}
-             </div>
-             <div className="text-sm text-gray-400">Try clicking "Scan for Signals" to generate new signals</div>
-           </div>
-         ) : (
+        <div className="space-y-3 sm:space-y-4 max-h-[calc(100vh-400px)] overflow-auto">
+          {loading ? (
+            // Beautiful skeleton loading with shimmer effect
+            <div className="space-y-3 sm:space-y-4">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="bg-slate-800/30 backdrop-blur-sm rounded-2xl p-4 sm:p-6 border border-slate-700/30">
+                  <div className="skeleton-shimmer">
+                    <div className="flex justify-between mb-3 sm:mb-4">
+                      <div className="h-4 sm:h-5 bg-slate-700 rounded w-24 sm:w-32"></div>
+                      <div className="h-3 sm:h-4 bg-slate-700 rounded w-16 sm:w-20"></div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-3 sm:mb-4">
+                      <div className="h-3 sm:h-4 bg-slate-700 rounded w-20 sm:w-24"></div>
+                      <div className="h-3 sm:h-4 bg-slate-700 rounded w-20 sm:w-24"></div>
+                      <div className="h-3 sm:h-4 bg-slate-700 rounded w-20 sm:w-24"></div>
+                    </div>
+                    <div className="flex justify-between">
+                      <div className="h-3 sm:h-4 bg-slate-700 rounded w-24 sm:w-28"></div>
+                      <div className="h-3 sm:h-4 bg-slate-700 rounded w-16 sm:w-20"></div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (data || []).length === 0 ? (
+            <div className="bg-slate-800/30 backdrop-blur-sm rounded-2xl p-8 sm:p-12 border border-slate-700/30 text-center">
+              <div className="text-3xl sm:text-4xl mb-3 sm:mb-4">📊</div>
+              <div className="text-lg sm:text-xl text-gray-300 mb-2">
+                {ticker ? `No signals found for ${ticker}` : 'No signals available'}
+              </div>
+              <div className="text-sm text-gray-400">Try clicking "Scan for Signals" to generate new signals</div>
+            </div>
+          ) : (
            <>
              {/* New signals notification */}
              {newSignalsCount > 0 && (
@@ -379,7 +379,7 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
              {(data || []).map((s: any, i: number) => (
                <div
                  key={`${s.ticker}-${s.ts}-${i}`}
-                 className={`bg-slate-800/30 backdrop-blur-sm rounded-2xl p-6 border signal-card hover:border-slate-600/50 transition-all duration-300 hover:scale-[1.02] ${
+                 className={`bg-slate-800/30 backdrop-blur-sm rounded-2xl p-4 sm:p-6 border signal-card hover:border-slate-600/50 transition-all duration-300 hover:scale-[1.02] ${
                    newSignalsCount > 0 && i < newSignalsCount
                      ? 'border-green-500/50 bg-green-900/10'
                      : 'border-slate-700/30'
@@ -389,12 +389,12 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
                    animation: newSignalsCount > 0 && i < newSignalsCount ? 'fade-in 0.5s ease-out forwards' : 'none'
                  }}
                >
-                 <div className="flex justify-between items-start mb-4">
-                   <div className="flex-1">
-                     <div className="flex items-center gap-3 mb-2">
-                       <span className="text-lg font-bold text-blue-400">{s.ticker || '-'}</span>
+                 <div className="flex flex-col sm:flex-row justify-between items-start mb-3 sm:mb-4 gap-4 sm:gap-0">
+                   <div className="flex-1 min-w-0">
+                     <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
+                       <span className="text-base sm:text-lg font-bold text-blue-400 truncate">{s.ticker || '-'}</span>
                        <span
-                         className={`px-3 py-1 rounded-lg text-sm font-semibold ${
+                         className={`px-2 sm:px-3 py-1 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap ${
                            s.action === 'BUY'
                              ? 'bg-green-900/30 text-green-400'
                              : 'bg-red-900/30 text-red-400'
@@ -402,27 +402,27 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
                        >
                          {s.action}
                        </span>
-                       <span className="text-xs text-gray-300 bg-slate-700/50 px-3 py-1 rounded-lg">
+                       <span className="text-xs text-gray-300 bg-slate-700/50 px-2 sm:px-3 py-1 rounded-lg truncate">
                          {s.strategy}
                        </span>
                      </div>
-                     <div className="text-sm text-gray-400">
+                     <div className="text-xs sm:text-sm text-gray-400">
                        Generated {s.ts ? new Date(s.ts).toLocaleString() : 'N/A'}
                      </div>
                    </div>
-                   <div className="text-right">
-                     <div className="text-sm text-gray-400 mb-2">Confidence</div>
-                     <div className="flex items-center gap-3">
-                       <div className="flex-1 bg-slate-700/50 rounded-full h-3 min-w-[80px]">
+                   <div className="w-full sm:w-auto sm:text-right">
+                     <div className="text-xs sm:text-sm text-gray-400 mb-2">Confidence</div>
+                     <div className="flex items-center gap-2 sm:gap-3">
+                       <div className="flex-1 bg-slate-700/50 rounded-full h-2 sm:h-3 min-w-[60px] sm:min-w-[80px]">
                          <div
-                           className={`h-3 rounded-full confidence-bar transition-all duration-500 ${
+                           className={`h-2 sm:h-3 rounded-full confidence-bar transition-all duration-500 ${
                              (s.confidence || 0) > 0.7 ? 'bg-green-400' :
                              (s.confidence || 0) > 0.5 ? 'bg-yellow-400' : 'bg-red-400'
                            }`}
                            style={{ width: `${(s.confidence || 0) * 100}%` }}
                          ></div>
                        </div>
-                       <div className={`text-lg font-bold min-w-[40px] ${
+                       <div className={`text-sm sm:text-lg font-bold min-w-[35px] sm:min-w-[40px] ${
                          (s.confidence || 0) > 0.7 ? 'text-green-400' :
                          (s.confidence || 0) > 0.5 ? 'text-yellow-400' : 'text-red-400'
                        }`}>
@@ -432,18 +432,18 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
                    </div>
                  </div>
 
-                 <div className="grid grid-cols-3 gap-4 mb-4">
-                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                     <div className="text-sm text-gray-400 mb-1">Entry Price</div>
-                     <div className="text-xl font-bold text-white">₹{Number(s.entry || 0).toFixed(2)}</div>
+                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-3 sm:mb-4">
+                   <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+                     <div className="text-xs sm:text-sm text-gray-400 mb-1">Entry Price</div>
+                     <div className="text-lg sm:text-xl font-bold text-white break-all">₹{Number(s.entry || 0).toFixed(2)}</div>
                    </div>
-                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                     <div className="text-sm text-gray-400 mb-1">Stop Loss</div>
-                     <div className="text-xl font-bold text-red-400">₹{Number(s.stop || 0).toFixed(2)}</div>
+                   <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+                     <div className="text-xs sm:text-sm text-gray-400 mb-1">Stop Loss</div>
+                     <div className="text-lg sm:text-xl font-bold text-red-400 break-all">₹{Number(s.stop || 0).toFixed(2)}</div>
                    </div>
-                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                     <div className="text-sm text-gray-400 mb-1">Target</div>
-                     <div className="text-xl font-bold text-green-400">
+                   <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+                     <div className="text-xs sm:text-sm text-gray-400 mb-1">Target</div>
+                     <div className="text-lg sm:text-xl font-bold text-green-400 break-all">
                        {s.target ? `₹${Number(s.target).toFixed(2)}` : 'N/A'}
                      </div>
                    </div>
@@ -452,7 +452,7 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
                  {/* Risk/Reward ratio */}
                  {s.target && s.stop && (
                    <div className="bg-slate-700/30 rounded-xl p-3 border border-slate-600/30">
-                     <div className="text-sm text-gray-300">
+                     <div className="text-xs sm:text-sm text-gray-300 break-words">
                        Risk/Reward Ratio: {((Number(s.target) - Number(s.entry || 0)) / (Number(s.entry || 0) - Number(s.stop))).toFixed(2)}:1
                      </div>
                    </div>
@@ -460,9 +460,9 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
 
                  {/* Warning for unusual prices */}
                  {Number(s.entry || 0) < 100 && (
-                   <div className="text-sm text-yellow-400 mt-3 flex items-center gap-2">
+                   <div className="text-xs sm:text-sm text-yellow-400 mt-3 flex items-center gap-2">
                      <span>⚠️</span>
-                     <span>Entry price seems unusual for this symbol</span>
+                     <span className="break-words">Entry price seems unusual for this symbol</span>
                    </div>
                  )}
                </div>
@@ -472,15 +472,15 @@ export default function SignalsTab({ isVisible = true }: { isVisible?: boolean }
        </div>
 
        {/* Footer with real-time status */}
-       <div className="mt-6 bg-slate-800/30 backdrop-blur-sm rounded-2xl p-4 border border-slate-700/30 flex items-center justify-between">
-         <div className="text-sm text-gray-300">
+       <div className="mt-4 sm:mt-6 bg-slate-800/30 backdrop-blur-sm rounded-2xl p-3 sm:p-4 border border-slate-700/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
+         <div className="text-xs sm:text-sm text-gray-300">
            {data && `Showing ${data.length} signal${data.length !== 1 ? 's' : ''}`}
          </div>
          <div className="flex items-center gap-2">
            {isBackgroundUpdating && (
              <div className="flex items-center gap-2 text-blue-400">
                <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-               <span className="text-sm">Live updates active</span>
+               <span className="text-xs sm:text-sm">Live updates active</span>
              </div>
            )}
          </div>
