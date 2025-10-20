@@ -1,12 +1,25 @@
 import os
 import json
+import argparse
 from datetime import datetime
 from backtest import run_backtests, load_candles, backtest_strategy, BTTrade
 
 def main():
+    parser = argparse.ArgumentParser(description='Run backtests for trading strategies')
+    parser.add_argument('--start-date', help='Start date for backtest (YYYY-MM-DD)')
+    parser.add_argument('--end-date', help='End date for backtest (YYYY-MM-DD)')
+    parser.add_argument('--tf', '--timeframe', default='5m', help='Timeframe to test')
+    parser.add_argument('--strategy', default='trend_follow', help='Strategy to test')
+    parser.add_argument('--max-symbols', type=int, default=10, help='Maximum symbols to test')
+
+    args = parser.parse_args()
+
     version = f"bt-{datetime.utcnow().strftime('%Y%m%d%H%M')}"
-    # First run all symbols to get overview
-    res = run_backtests(["trend_follow","mean_reversion","momentum"], ["5m"], symbols_limit=250)
+    # Use command line args for limited testing
+    strategies = [args.strategy]
+    timeframes = [args.tf]
+    symbols_limit = args.max_symbols
+    res = run_backtests(strategies, timeframes, symbols_limit=symbols_limit)
 
     # Comprehensive analysis of all stocks
     print("\n📊 COMPREHENSIVE MULTI-STOCK ANALYSIS")

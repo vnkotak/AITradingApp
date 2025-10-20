@@ -76,10 +76,36 @@ class AutoExecutor:
 
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours_back)
         try:
+            # Add stricter filters: higher confidence, exclude very recent signals (cooldown 30min), limit per symbol
             signals = self.sb.table("signals").select("""
                 id, ts, strategy, action, entry, stop, target, confidence,
                 symbol_id, timeframe, rationale
             """).eq("timeframe", timeframe).gte("confidence", confidence_threshold).gte("ts", cutoff_time.isoformat()).order("ts", desc=True).execute().data or []
+
+            # Apply additional filters: higher confidence, cooldown, market condition check
+            filtered_signals = []
+            symbol_last_signal = {}
+            for signal in signals:
+                if signal['confidence'] < 0.75:  # Stricter confidence threshold
+                    continue
+                symbol_id = signal['symbol_id']
+                ts = datetime.fromisoformat(signal['ts'])
+
+                # Cooldown: max 1 signal per symbol per 2 hours
+                if symbol_id in symbol_last_signal:
+                    time_diff = (ts - symbol_last_signal[symbol_id]).total_seconds() / 3600
+                    if time_diff < 2.0:
+                        continue
+                symbol_last_signal[symbol_id] = ts
+
+                # Market condition filter: skip if signal during volatile periods
+                if self._is_volatile_market_conditions():
+                    logger.info(f"Skipping signal for {signal['symbol_id']} due to volatile market conditions")
+                    continue
+
+                filtered_signals.append(signal)
+
+            signals = filtered_signals
 
             # Attach symbol information to each signal
             signals_with_symbols = []
@@ -144,6 +170,22 @@ class AutoExecutor:
             self._cache_timestamp = now
 
         return self._risk_limits_cache
+
+    def _is_volatile_market_conditions(self) -> bool:
+        """Check if current market conditions are volatile (high volume, large moves)"""
+        try:
+            # Get Nifty index as market proxy (assuming symbol_id for Nifty exists)
+            # For simplicity, check if current time indicates high volatility periods
+            now = datetime.now(pytz.timezone('Asia/Kolkata'))
+            # High volatility periods: market open (9-10 AM IST), lunch break (1-2 PM), close (3 PM)
+            hour = now.hour
+            if hour in [9, 10, 13, 14, 15] or (hour == 9 and now.minute < 30):  # First 30 min of trading
+                return True
+            # Could add actual volatility checks here using ATR from candles
+            return False
+        except Exception as e:
+            logger.warning(f"Error checking market volatility: {e}")
+            return False
 
     def has_recent_order(self, symbol_id: str, action: str, minutes_back: int = 10) -> bool:
         """Check if there's already a recent order for this symbol and action"""
@@ -296,12 +338,14 @@ class AutoExecutor:
         if should_execute and order_qty > 0:
             try:
                 # Place order using existing API
+                # Add small buffer to entry price to align with market ask and reduce rejections
+                limit_price = entry_price * 1.005 if action == 'BUY' else entry_price  # 0.5% buffer for BUY limits
                 order_payload = {
                     "ticker": ticker,
                     "exchange": exchange,
                     "side": order_side,
                     "type": "LIMIT",  # Use limit orders for signals
-                    "price": entry_price,
+                    "price": limit_price,
                     "qty": order_qty
                 }
 
@@ -319,7 +363,7 @@ class AutoExecutor:
                 response.raise_for_status()
 
                 order_result = response.json()
-                logger.info(f"✅ Executed {order_side} order for {order_qty} {ticker} at {entry_price} ({signal['timeframe']} timeframe): {order_result}")
+                logger.info(f"✅ Executed {order_side} order for {order_qty} {ticker} at {limit_price} ({signal['timeframe']} timeframe): {order_result}")
 
                 return True
 
@@ -343,6 +387,7 @@ class AutoExecutor:
         # FIRST: Run profit-taking and risk management (independent of signals)
         if not dry_run:
             self._run_profit_taking_cycle()
+            self._check_signal_stops_targets()  # Add signal-based exits
         else:
             logger.info("DRY RUN: Skipping profit-taking cycle")
 
@@ -371,12 +416,24 @@ class AutoExecutor:
                 logger.error(f"Error processing signal {signal['id']}: {e}")
                 errors += 1
 
+        # Calculate conversion metrics
+        conversion_rate = (executed / len(signals) * 100) if signals else 0
+        rejection_rate = (skipped / len(signals) * 100) if signals else 0
+
         logger.info(f"Execution cycle complete: {executed} executed, {skipped} skipped, {errors} errors")
+        logger.info(f"Conversion metrics: {conversion_rate:.1f}% executed, {rejection_rate:.1f}% rejected")
+
+        # Alert if conversion rate is below threshold
+        if conversion_rate < 50 and len(signals) > 10:
+            logger.warning(f"⚠️ LOW CONVERSION ALERT: Only {conversion_rate:.1f}% of signals executed. Check limit prices and filters.")
+
         return {
             "executed": executed,
             "skipped": skipped,
             "errors": errors,
-            "signals_processed": len(signals)
+            "signals_processed": len(signals),
+            "conversion_rate": conversion_rate,
+            "rejection_rate": rejection_rate
         }
 
     def _run_profit_taking_cycle(self):
@@ -448,6 +505,62 @@ class AutoExecutor:
 
         except Exception as e:
             logger.error(f"Error in profit-taking cycle: {e}")
+
+    def _check_signal_stops_targets(self):
+        """Check all positions for signal-based stops and targets and execute exits"""
+        logger.info("🔍 Checking signal stops/targets for active positions...")
+
+        try:
+            sb = get_client()
+            # Get positions with signal info from notes
+            positions = sb.table("positions").select("symbol_id,avg_price,qty").execute().data or []
+
+            exits = 0
+            for position in positions:
+                if position['qty'] <= 0:
+                    continue
+
+                symbol_id = position['symbol_id']
+                entry_price = position['avg_price']
+                qty = position['qty']
+
+                # Get symbol info
+                try:
+                    symbol_info = sb.table("symbols").select("ticker,exchange").eq("id", symbol_id).single().execute().data
+                    if not symbol_info:
+                        continue
+                    ticker = symbol_info['ticker']
+                    exchange = symbol_info['exchange']
+                except Exception:
+                    continue
+
+                # Get current price
+                current_price = self._get_current_price(symbol_id, ticker, exchange)
+                if not current_price:
+                    continue
+
+                # Get signal info from recent orders
+                recent_buy = sb.table("orders").select("simulator_notes").eq("symbol_id", symbol_id).eq("side", "BUY").eq("status", "FILLED").order("ts", desc=True).limit(1).execute().data
+                if recent_buy and recent_buy[0].get("simulator_notes"):
+                    notes = recent_buy[0]["simulator_notes"]
+                    if isinstance(notes, dict):
+                        stop_price = notes.get("stop_price")
+                        target_price = notes.get("target_price")
+
+                        if target_price and current_price >= target_price:
+                            logger.info(f"🎯 {ticker}: Signal target reached ({current_price:.2f} >= {target_price:.2f})")
+                            self._execute_market_exit(symbol_id, ticker, exchange, 'SELL', qty)
+                            exits += 1
+                        elif stop_price and current_price <= stop_price:
+                            logger.info(f"🛑 {ticker}: Signal stop triggered ({current_price:.2f} <= {stop_price:.2f})")
+                            self._execute_market_exit(symbol_id, ticker, exchange, 'SELL', qty)
+                            exits += 1
+
+            if exits > 0:
+                logger.info(f"📈 Signal-based exits: {exits} positions closed")
+
+        except Exception as e:
+            logger.error(f"Error in signal stops/targets check: {e}")
 
 
 def main():

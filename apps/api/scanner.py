@@ -274,13 +274,13 @@ def scan_once(mode: str, force: bool = False, max_symbols: int = 200) -> dict:
     print(f"Mode {mode} - Memory optimized (max {max_symbols} symbols)")
     run = sb.table("strategy_runs").insert({"mode": mode, "symbols_scanned": None, "signals_generated": None}).execute().data[0]
     run_id = run["id"]
-    symbols = sb.table("symbols").select("id,ticker,exchange").eq("is_active", True).limit(max_symbols).execute().data
+    symbols = sb.table("symbols").select("id,ticker,exchange").eq("is_active", True).order("ticker").limit(max_symbols).execute().data
     total_signals = 0
     delta_updates = 0
     full_refreshes = 0
-    for s in symbols:
+    for i, s in enumerate(symbols):
         sid = s["id"]; ticker = s["ticker"]; exch = s["exchange"]
-        print(f"🔍 Scanning {ticker}...")
+        print(f"🔍 Scanning {ticker}... ({i+1}/{len(symbols)})")
         df = fetch_history_df(sid, ticker, exch, tf=mode)
 
         # Track if this was a delta update or full refresh
@@ -292,6 +292,12 @@ def scan_once(mode: str, force: bool = False, max_symbols: int = 200) -> dict:
         if df.empty or len(df) < 60:
             continue
         df = add_core_indicators(df)
+
+        # Skip if overbought/oversold conditions
+        if is_overbought_oversold(df):
+            print(f"  Skipping {ticker} - extreme market conditions detected")
+            continue
+
         raw_signals = run_strategies(df)
         if not raw_signals and force:
             # deterministic forced signal for testing
@@ -335,11 +341,11 @@ def scan_once(mode: str, force: bool = False, max_symbols: int = 200) -> dict:
                 "confidence": conf,
                 "rationale": {"rationale": sig.rationale, "scoring": rationale},
             })
-        # Use the same quality filtering as backtest - just apply signal_quality_filter
+        # Apply stricter confidence threshold for signals (same as execution and backtest)
         quality_signals = []
         for sig in raw_signals:
             # Apply the same filter used in backtest
-            if signal_quality_filter(sig, df):
+            if signal_quality_filter(sig, df) and sig.confidence >= 0.75:
                 quality_signals.append(sig)
 
         if quality_signals:

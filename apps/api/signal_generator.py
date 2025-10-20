@@ -54,6 +54,19 @@ def _feature_contributions(df: pd.DataFrame) -> Dict[str, float]:
 
 
 def _sentiment_bias(ticker: str, exchange: str, lookback: int = 3) -> float:
+    # Skip sentiment bias during backtesting and scanner to avoid database calls
+    try:
+        import inspect
+        # Check if we're being called from backtest or scanner context
+        frame = inspect.currentframe()
+        while frame:
+            filename = frame.f_code.co_filename.lower()
+            if 'backtest' in filename or 'scanner' in filename:
+                return 0.0
+            frame = frame.f_back
+    except:
+        pass
+
     try:
         from supabase_client import get_client
         sb = get_client()

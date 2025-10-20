@@ -240,21 +240,24 @@ def strategy_signals(df: pd.DataFrame, name: str) -> pd.Series:
     strat_func = strategy_funcs[name]
 
     # Generate signals using live strategy logic with confidence scoring
-    print(len(df))
+    # Remove excessive prints - only show progress every 100 candles
     for i in range(len(df)):
         # Use cumulative data up to current point
         df_subset = df.iloc[:i+1]
 
         try:
-            print(i)
+            if i % 100 == 0:  # Progress every 100 candles
+                print(f"    Processing candle {i}/{len(df)}")
             signal = strat_func(df_subset)
             if signal and signal_quality_filter(signal, df_subset):
                 # Apply confidence scoring with updated weights
                 confidence, rationale = score_signal(df_subset, signal.action, signal.confidence, {'ticker': 'TEST', 'exchange': 'NSE'})
-                # Use the same confidence threshold as live trading (0.6)
-                if confidence >= 0.6:
+                # Use stricter confidence threshold (0.75) to match live filters
+                if confidence >= 0.75:
                     s.iloc[i] = 'BUY' if signal.action == 'BUY' else 'SELL'
-        except Exception:
+        except Exception as e:
+            if i % 100 == 0:
+                print(f"    Error at candle {i}: {e}")
             continue
 
     return s
@@ -366,8 +369,11 @@ def run_backtests(strategies: List[str], timeframes: List[Timeframe], symbols_li
                     continue
 
                 print(f"    📊 {tf}: {len(df)} candles")
+                # Add progress indicator to avoid large output
+                print(f"    🔄 Processing {len(df)} candles...")
                 trades, eq = backtest_strategy(df, strat)
                 strat_trades += len(trades)
+                print(f"    ✅ Completed {len(trades)} trades")
 
                 if strat_equity is None:
                     strat_equity = eq
