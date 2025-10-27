@@ -84,15 +84,15 @@ def _sentiment_bias(ticker: str, exchange: str, lookback: int = 3) -> float:
 
 def score_signal(df: pd.DataFrame, action: str, base_conf: float, context: Dict | None = None) -> tuple[float, Dict]:
     feats = _feature_contributions(df)
-    # Adjusted weights for better trend-following and momentum capture
-    # Less restrictive RSI requirements, reduced VWAP penalty for trending markets
+    # Weights optimized for Flawless Victory mean reversion strategy
+    # Focus on mean reversion signals, RSI positioning, and BB extremes
     w = {
-        "rsi_bias": 0.4 if action == "BUY" else -0.8,  # Reduced from 0.8 to 0.4 for BUY (less oversold requirement)
-        "macd_momentum": 0.8 if action == "BUY" else -0.7,  # Increased from 0.7 to 0.8 for BUY (more momentum focus)
-        "trend_strength": 0.7,  # Increased from 0.5 (stronger trend preference)
-        "vwap_premium_atr": -0.3 if action == "BUY" else 0.6,  # Reduced from -0.6 to -0.3 for BUY (less VWAP penalty)
-        "bb_regime": 0.2,
-        "volume_z": 0.4,  # Increased from 0.3 (more volume importance)
+        "rsi_bias": 0.9 if action == "BUY" else -0.8,  # Strong RSI preference for mean reversion
+        "macd_momentum": 0.4 if action == "BUY" else -0.5,  # Moderate momentum (not primary)
+        "trend_strength": -0.6,  # Penalize strong trends (prefer ranging for mean reversion)
+        "vwap_premium_atr": 0.2,  # Neutral VWAP for mean reversion
+        "bb_regime": 0.7,  # High volatility preferred (BB width indicates mean reversion opportunity)
+        "volume_z": 0.3,  # Moderate volume importance
     }
     logits = base_conf * 1.5
     contribs: Dict[str, float] = {}

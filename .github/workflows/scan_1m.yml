@@ -70,4 +70,4 @@ jobs:
       - name: Call scanner 1m
         if: steps.market-check.outputs.market_open == 'true'
         run: |
-          curl -sS -X POST "https://aitradingapp.onrender.com/scanner/run?mode=1m"
+           # curl -sS -X POST "https://aitradingapp.onrender.com/scanner/run?mode=1m"

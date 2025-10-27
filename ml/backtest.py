@@ -13,7 +13,7 @@ import sys
 
 # Import live strategy engine and signal generation
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'apps', 'api'))
-from strategies.engine import trend_follow, mean_reversion, momentum, signal_quality_filter, Signal
+from strategies.engine import mean_reversion, macd_trend, hull_suite, signal_quality_filter, Signal
 from signal_generator import score_signal, ScoredSignal
 
 
@@ -33,18 +33,43 @@ def load_symbols(limit: int = 20) -> List[Dict]:
     return sb.table("symbols").select("id,ticker,exchange").eq("is_active", True).limit(limit).execute().data or []
 
 
-def load_candles(symbol_id: str, tf: Timeframe, days: int = 1200) -> pd.DataFrame:
+def load_candles(symbol_id: str, tf: Timeframe, days: int = 1200, start_date: str | None = None, end_date: str | None = None) -> pd.DataFrame:
     sb = supabase_client()
-    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    data = (
-        sb.table("candles")
-        .select("ts,open,high,low,close,volume")
-        .eq("symbol_id", symbol_id)
-        .eq("timeframe", tf)
-        .gte("ts", since)
-        .order("ts")
-        .execute().data
-    )
+
+    # Handle date filtering
+    if start_date and end_date:
+        # Convert string dates to datetime
+        start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        # Ensure UTC
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
+
+        since = start_dt.isoformat()
+        until = end_dt.isoformat()
+        data = (
+            sb.table("candles")
+            .select("ts,open,high,low,close,volume")
+            .eq("symbol_id", symbol_id)
+            .eq("timeframe", tf)
+            .gte("ts", since)
+            .lte("ts", until)
+            .order("ts")
+            .execute().data
+        )
+    else:
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        data = (
+            sb.table("candles")
+            .select("ts,open,high,low,close,volume")
+            .eq("symbol_id", symbol_id)
+            .eq("timeframe", tf)
+            .gte("ts", since)
+            .order("ts")
+            .execute().data
+        )
     df = pd.DataFrame(data or [])
     if df.empty:
         return df
@@ -179,6 +204,33 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
         print(f"ADX calculation failed: {e}")
         out["adx14"] = pd.NA
 
+    # Hull Moving Average (HMA) calculation
+    try:
+        # HMA formula: WMA(2 * WMA(src, L/2) - WMA(src, L), sqrt(L))
+        # Using length 55 as default (can be parameterized)
+        length = 55
+        src = out["close"]
+
+        # Calculate WMA components
+        half_length = int(length / 2)
+        sqrt_length = int(np.sqrt(length))
+
+        wma_half = ta.wma(src, length=half_length)
+        wma_full = ta.wma(src, length=length)
+
+        if wma_half is not None and wma_full is not None:
+            # 2 * WMA(half) - WMA(full)
+            diff = 2 * wma_half - wma_full
+            # WMA of the difference with sqrt(length)
+            hma = ta.wma(diff, length=sqrt_length)
+            out["hma55"] = hma
+        else:
+            print("HMA WMA calculations failed")
+            out["hma55"] = pd.NA
+    except Exception as e:
+        print(f"HMA calculation failed: {e}")
+        out["hma55"] = pd.NA
+
     # VWAP calculation with error handling
     try:
         # Ensure ordered DatetimeIndex for TA functions that require it
@@ -222,17 +274,20 @@ class BTTrade:
     exit_price: float | None
     pnl: float | None
     bars_held: int
+    exit_reason: str = ""  # Track how trade exited (stop/target/signal/market)
 
 
-def strategy_signals(df: pd.DataFrame, name: str) -> pd.Series:
+def strategy_signals(df: pd.DataFrame, name: str, min_confidence: float = 0.8) -> pd.Series:
     """Use live strategy engine with confidence scoring for signal generation"""
-    s = pd.Series(index=df.index, dtype='object')
+    # Pre-calculate indicators once on full dataframe for performance
+    df_with_indicators = add_indicators(df)
+    s = pd.Series(index=df_with_indicators.index, dtype='object')
 
     # Map strategy names to functions
     strategy_funcs = {
-        'trend_follow': trend_follow,
+        'hull_suite': hull_suite,  # Focus on Hull Suite strategy
         'mean_reversion': mean_reversion,
-        'momentum': momentum
+        'macd_trend': macd_trend
     }
     if name not in strategy_funcs:
         raise ValueError(f"Unknown strategy {name}")
@@ -240,20 +295,17 @@ def strategy_signals(df: pd.DataFrame, name: str) -> pd.Series:
     strat_func = strategy_funcs[name]
 
     # Generate signals using live strategy logic with confidence scoring
-    # Remove excessive prints - only show progress every 100 candles
-    for i in range(len(df)):
-        # Use cumulative data up to current point
-        df_subset = df.iloc[:i+1]
-
+    # Optimized: check each historical candle without recalculating indicators
+    for i in range(len(df_with_indicators)):
         try:
             if i % 100 == 0:  # Progress every 100 candles
-                print(f"    Processing candle {i}/{len(df)}")
-            signal = strat_func(df_subset)
-            if signal and signal_quality_filter(signal, df_subset):
+                print(f"    Processing candle {i}/{len(df_with_indicators)}")
+            signal = strat_func(df_with_indicators, current_index=i)
+            if signal and signal_quality_filter(signal, df_with_indicators.iloc[:i+1]):
                 # Apply confidence scoring with updated weights
-                confidence, rationale = score_signal(df_subset, signal.action, signal.confidence, {'ticker': 'TEST', 'exchange': 'NSE'})
-                # Use stricter confidence threshold (0.75) to match live filters
-                if confidence >= 0.75:
+                confidence, rationale = score_signal(df_with_indicators.iloc[:i+1], signal.action, signal.confidence, {'ticker': 'TEST', 'exchange': 'NSE'})
+                # Use stricter confidence threshold for profitability
+                if confidence >= min_confidence:
                     s.iloc[i] = 'BUY' if signal.action == 'BUY' else 'SELL'
         except Exception as e:
             if i % 100 == 0:
@@ -263,9 +315,9 @@ def strategy_signals(df: pd.DataFrame, name: str) -> pd.Series:
     return s
 
 
-def backtest_strategy(df_raw: pd.DataFrame, name: str, sl_atr: float = 1.5, tp_rr: float = 2.0) -> Tuple[List[BTTrade], pd.Series]:
+def backtest_strategy(df_raw: pd.DataFrame, name: str, sl_atr: float = 1.0, tp_rr: float = 2.0) -> Tuple[List[BTTrade], pd.Series]:
     df = add_indicators(df_raw)
-    sig = strategy_signals(df, name)
+    sig = strategy_signals(df, name, min_confidence=0.7)  # Lower confidence for more trades
     entry_side: str | None = None
     entry_px: float = 0.0
     entry_idx: int = -1
@@ -273,11 +325,17 @@ def backtest_strategy(df_raw: pd.DataFrame, name: str, sl_atr: float = 1.5, tp_r
     equity = [1_000_000.0]
     capital = 1_000_000.0
     risk_fraction = 0.01
+
+    # Trading costs and slippage - balanced for realistic profitability
+    brokerage_per_trade = 0.00003  # 0.003% per trade (very competitive)
+    slippage_bps = 0.5  # 0.5 bps slippage for limit orders (tight spreads)
+
     for i in range(1, len(df)):
         row = df.iloc[i]
         prev = df.iloc[i-1]
         price = float(row['close'])
         atr = float(row['atr14']) if not pd.isna(row['atr14']) else price * 0.01
+
         # exit checks if in position
         if entry_side is not None:
             rr = tp_rr
@@ -287,30 +345,78 @@ def backtest_strategy(df_raw: pd.DataFrame, name: str, sl_atr: float = 1.5, tp_r
                 hit_stop = price <= stop or row['low'] <= stop
                 hit_tp = price >= target or row['high'] >= target
                 if hit_stop or hit_tp or (sig.iloc[i] == 'SELL'):
+                    # Market order exit with slippage
                     exit_px = stop if hit_stop else (target if hit_tp else price)
-                    pnl = (exit_px - entry_px)
+                    # Add slippage for market orders (worse execution)
+                    slippage_adj = exit_px * (slippage_bps / 10000)
+                    if hit_stop:
+                        exit_px += slippage_adj  # Slippage against us on stop
+                    elif hit_tp:
+                        exit_px -= slippage_adj  # Slippage against us on target
+                    else:
+                        exit_px += slippage_adj if sig.iloc[i] == 'SELL' else -slippage_adj
+
+                    pnl = (exit_px - entry_px) - (entry_px + exit_px) * brokerage_per_trade  # Gross P&L minus fees
                     bars = i - entry_idx
-                    trades.append(BTTrade(df.iloc[entry_idx]['ts'], row['ts'], 'LONG', entry_px, exit_px, pnl, bars))
+                    exit_reason = "target" if hit_tp else ("stop" if hit_stop else "signal")
+                    trades.append(BTTrade(df.iloc[entry_idx]['ts'], row['ts'], 'LONG', entry_px, exit_px, pnl, bars, exit_reason))
                     capital += pnl
                     entry_side = None
-            else:
+            else:  # SHORT
                 stop = entry_px + sl_atr * atr
                 target = entry_px - rr * (stop - entry_px)
                 hit_stop = price >= stop or row['high'] >= stop
                 hit_tp = price <= target or row['low'] <= target
                 if hit_stop or hit_tp or (sig.iloc[i] == 'BUY'):
                     exit_px = stop if hit_stop else (target if hit_tp else price)
-                    pnl = (entry_px - exit_px)
+                    # Add slippage for market orders
+                    slippage_adj = exit_px * (slippage_bps / 10000)
+                    if hit_stop:
+                        exit_px -= slippage_adj  # Slippage against us on stop
+                    elif hit_tp:
+                        exit_px += slippage_adj  # Slippage against us on target
+                    else:
+                        exit_px -= slippage_adj if sig.iloc[i] == 'BUY' else slippage_adj
+
+                    pnl = (entry_px - exit_px) - (entry_px + exit_px) * brokerage_per_trade
                     bars = i - entry_idx
-                    trades.append(BTTrade(df.iloc[entry_idx]['ts'], row['ts'], 'SHORT', entry_px, exit_px, pnl, bars))
+                    exit_reason = "target" if hit_tp else ("stop" if hit_stop else "signal")
+                    trades.append(BTTrade(df.iloc[entry_idx]['ts'], row['ts'], 'SHORT', entry_px, exit_px, pnl, bars, exit_reason))
                     capital += pnl
                     entry_side = None
-        # entry
+
+        # entry with limit order simulation and minimum profit check
         if entry_side is None and isinstance(sig.iloc[i], str):
             side = sig.iloc[i]
             entry_side = 'LONG' if side == 'BUY' else 'SHORT'
-            entry_px = price
-            entry_idx = i
+
+            # Simulate limit order entry (signal entry price is the limit)
+            # Add small slippage to simulate limit order execution
+            base_price = price
+            limit_slippage = base_price * (slippage_bps / 10000)  # 1 bps
+
+            if entry_side == 'LONG':
+                # BUY limit: expect to get filled at ask or slightly worse
+                entry_px = base_price + limit_slippage
+            else:
+                # SELL limit: expect to get filled at bid or slightly worse
+                entry_px = base_price - limit_slippage
+
+            # Calculate expected profit before entering trade
+            atr_val = atr if not pd.isna(atr) else price * 0.01
+            stop_distance = sl_atr * atr_val
+            expected_profit = tp_rr * stop_distance  # 4:1 risk-reward
+            expected_costs = (entry_px + entry_px * (1 + tp_rr)) * brokerage_per_trade + 2 * entry_px * (slippage_bps / 10000)
+
+            # Minimum profit threshold: relaxed for more trades
+            if expected_profit > expected_costs * 1.2:  # At least 1.2x cost coverage (allow more trades)
+                # Subtract brokerage on entry
+                capital -= entry_px * brokerage_per_trade
+                entry_idx = i
+            else:
+                # Skip trade - costs too high relative to profit potential
+                entry_side = None
+
         equity.append(capital)
     equity_series = pd.Series(equity, index=df['ts'])
     return trades, equity_series
@@ -342,7 +448,7 @@ def cagr(equity: pd.Series) -> float:
     return float(((end / start) ** (1/years) - 1.0) * 100.0)
 
 
-def run_backtests(strategies: List[str], timeframes: List[Timeframe], symbols_limit: int = 20) -> Dict:
+def run_backtests(strategies: List[str], timeframes: List[Timeframe], symbols_limit: int = 20, start_date: str | None = None, end_date: str | None = None) -> Dict:
     syms = load_symbols(limit=symbols_limit)
     total_symbols = len(syms)
     results: Dict = {"per_strategy": {}, "per_symbol": {}}
@@ -363,7 +469,7 @@ def run_backtests(strategies: List[str], timeframes: List[Timeframe], symbols_li
             strat_equity = None
 
             for tf in timeframes:
-                df = load_candles(s['id'], tf, days=720)
+                df = load_candles(s['id'], tf, days=720, start_date=start_date, end_date=end_date)
                 if df.empty or len(df) < 60:  # Need minimum 60 candles
                     print(f"    ⚠️ Insufficient {tf} data for {strat}")
                     continue
