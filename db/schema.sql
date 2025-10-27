@@ -107,7 +107,7 @@ create table if not exists public.strategy_runs (
   id uuid primary key default gen_random_uuid(),
   started_at timestamptz not null default now(),
   completed_at timestamptz,
-  mode text not null check (mode in ('1m','5m','15m')),
+  mode text not null check (mode in ('1m','5m','15m','1h','1d')),
   symbols_scanned int,
   signals_generated int,
   metadata jsonb

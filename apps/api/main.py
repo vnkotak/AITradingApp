@@ -45,7 +45,7 @@ app.include_router(ai_router)
 
 @app.post("/scanner/run", response_model=RunResponse)
 def run_scanner(mode: str, force: bool = False, _=Depends(verify_scanner_token)):
-    if mode not in {"1m", "5m", "15m", "1d"}:
+    if mode not in {"1m", "5m", "15m", "1d", "1h"}:
         raise HTTPException(status_code=400, detail="Invalid mode")
     from apps.api.scanner import scan_once
     result = scan_once(mode, force=force)
