@@ -318,14 +318,14 @@ def run_strategies(df: pd.DataFrame) -> List[Optional[Signal]]:
     signals = []
 
     # Run mean reversion strategy
-    mean_rev_signal = mean_reversion(df)
-    if mean_rev_signal:
-        signals.append(mean_rev_signal)
+    # mean_rev_signal = mean_reversion(df)
+    # if mean_rev_signal:
+    #     signals.append(mean_rev_signal)
 
     # Run MACD trend strategy
-    macd_signal = macd_trend(df)
-    if macd_signal:
-        signals.append(macd_signal)
+    # macd_signal = macd_trend(df)
+    # if macd_signal:
+    #     signals.append(macd_signal)
 
     # Run Hull Suite strategy (replacing Alligator)
     hull_signal = hull_suite(df)
