@@ -2,6 +2,7 @@ import os
 import json
 import argparse
 from datetime import datetime
+import pandas as pd
 from backtest import run_backtests, load_candles, backtest_strategy, BTTrade
 
 def main():
@@ -21,19 +22,26 @@ def main():
     symbols_limit = args.max_symbols
     start_date = args.start_date
     end_date = args.end_date
+    print(f"🚀 Starting backtest with {symbols_limit} symbols, timeframe {timeframes[0]}...")
     res = run_backtests(strategies, timeframes, symbols_limit=symbols_limit, start_date=start_date, end_date=end_date)
 
     # Comprehensive analysis of all stocks
     print("\n📊 COMPREHENSIVE MULTI-STOCK ANALYSIS")
     analyze_all_stocks_comprehensive(res)
 
-    # Calculate total actual P&L across all trades
+    # Analyze Hull Suite characteristics and suitability patterns
+    analyze_hull_suite_characteristics(res)
+
+    # Calculate total actual P&L across all trades and aggregate daily stats
     total_pnl = 0
     total_trades = 0
     winning_trades = 0
     losing_trades = 0
     total_positive_pnl = 0
     total_negative_pnl = 0
+
+    # Aggregate daily statistics across all symbols
+    global_daily_stats = {}
 
     for ticker, ticker_results in res.get("per_symbol", {}).items():
         for strategy, metrics in ticker_results.items():
@@ -45,7 +53,15 @@ def main():
                 if sym_data:
                     df = load_candles(sym_data["id"], "15m", days=720, start_date=start_date, end_date=end_date)
                     if not df.empty and len(df) >= 60:
-                        trades, _ = backtest_strategy(df, strategy)
+                        trades, _, daily_stats = backtest_strategy(df, strategy)
+
+                        # Aggregate daily stats
+                        for date, stats in daily_stats.items():
+                            if date not in global_daily_stats:
+                                global_daily_stats[date] = {'BUY': 0, 'SELL': 0, 'total': 0}
+                            global_daily_stats[date]['BUY'] += stats['BUY']
+                            global_daily_stats[date]['SELL'] += stats['SELL']
+                            global_daily_stats[date]['total'] += stats['total']
 
                         for trade in trades:
                             if trade.pnl is not None:
@@ -67,6 +83,25 @@ def main():
         print(f"  Losing Trades: {losing_trades} ({losing_trades/total_trades*100:.1f}%)")
         print(f"  Average P&L per Trade: ₹{total_pnl/total_trades:,.2f}")
         print(f"  Profit Factor: {total_positive_pnl/total_negative_pnl:.2f}" if total_negative_pnl > 0 else "  Profit Factor: Infinite (no losses)")
+
+    # Print global daily statistics
+    if global_daily_stats:
+        print(f"\n📊 AGGREGATE DAILY TRADE BREAKDOWN ACROSS ALL SYMBOLS:")
+        print(f"{'Date':<12} {'BUY':<8} {'SELL':<8} {'Total':<8}")
+        print("-" * 40)
+        for date in sorted(global_daily_stats.keys()):
+            stats = global_daily_stats[date]
+            date_str = date.strftime('%Y-%m-%d')
+            print(f"{date_str:<12} {stats['BUY']:<8} {stats['SELL']:<8} {stats['total']:<8}")
+
+        # Show last date statistics
+        last_date = max(global_daily_stats.keys())
+        last_stats = global_daily_stats[last_date]
+        last_date_str = last_date.strftime('%Y-%m-%d')
+        print(f"\n📅 LAST DATE ({last_date_str}) STATS:")
+        print(f"  BUY signals: {last_stats['BUY']}")
+        print(f"  SELL signals: {last_stats['SELL']}")
+        print(f"  Total trades: {last_stats['total']}")
 
     # Show realistic expectation
     print("\n📋 TRADING COST BREAKDOWN (ULTRA-OPTIMIZED):")
@@ -198,7 +233,166 @@ def analyze_all_stocks_comprehensive(res):
         print(f"  Trade Generation Rate: {actual_trades/total_possible*100:.1f}%")
     else:
         print("  Trade Generation Rate: 0.0%")
+    
+    
+def analyze_hull_suite_characteristics(res):
+        """Analyze quantitative characteristics that make stocks suitable for Hull Suite"""
+        print("\n🔬 HULL SUITE STRATEGY CHARACTERISTICS ANALYSIS")
+    
+        # Calculate characteristics for each stock that had Hull trades
+        stock_characteristics = []
+    
+        for ticker, ticker_results in res.get("per_symbol", {}).items():
+            for strategy, metrics in ticker_results.items():
+                if strategy == "hull_suite" and metrics.get("trades", 0) > 0:
+                    # Load historical data to calculate characteristics
+                    try:
+                        from backtest import supabase_client, load_candles
+                        sb = supabase_client()
+                        sym_data = sb.table("symbols").select("id").eq("ticker", ticker).eq("exchange", "NSE").single().execute().data
+                        if sym_data:
+                            df = load_candles(sym_data["id"], "15m", days=720)
+                            if not df.empty and len(df) >= 100:  # Need sufficient data
+                                # Calculate Hull-specific characteristics
+                                chars = calculate_hull_characteristics(df)
+                                chars.update({
+                                    'ticker': ticker,
+                                    'sharpe': metrics.get("sharpe", 0),
+                                    'trades': metrics.get("trades", 0),
+                                    'profitable': metrics.get("sharpe", 0) > 0
+                                })
+                                stock_characteristics.append(chars)
+                    except Exception as e:
+                        print(f"❌ Error calculating characteristics for {ticker}: {e}")
+    
+        if not stock_characteristics:
+            print("❌ No stock characteristics data available")
+            return []
+    
+        # Separate profitable vs unprofitable
+        profitable = [s for s in stock_characteristics if s['profitable']]
+        unprofitable = [s for s in stock_characteristics if not s['profitable']]
+    
+        print(f"\n📊 CHARACTERISTICS COMPARISON:")
+        print(f"✅ Profitable Stocks ({len(profitable)}): {', '.join([s['ticker'] for s in profitable])}")
+        print(f"❌ Unprofitable Stocks ({len(unprofitable)}): {', '.join([s['ticker'] for s in unprofitable])}")
+    
+        # Calculate average characteristics
+        if profitable and unprofitable:
+            print(f"\n📈 AVERAGE CHARACTERISTICS:")
+    
+            char_names = ['avg_adx', 'trend_consistency', 'volatility_regime', 'hma_slope_freq', 'volume_trend_corr']
+            headers = ['Characteristic', 'Profitable Avg', 'Unprofitable Avg', 'Difference']
+    
+            print(f"{'Characteristic':<20} {'Profitable':<12} {'Unprofitable':<14} {'Better':<10}")
+            print("-" * 70)
+    
+            for char_name in char_names:
+                try:
+                    prof_values = [s[char_name] for s in profitable if char_name in s and not pd.isna(s[char_name])]
+                    unprof_values = [s[char_name] for s in unprofitable if char_name in s and not pd.isna(s[char_name])]
 
+                    if prof_values and unprof_values:
+                        prof_avg = sum(prof_values) / len(prof_values)
+                        unprof_avg = sum(unprof_values) / len(unprof_values)
+                        better = "Profitable" if prof_avg > unprof_avg else "Unprofitable"
+                        print(f"{char_name:<20} {prof_avg:<12.3f} {unprof_avg:<14.3f} {better:<10}")
+                    else:
+                        print(f"{char_name:<20} {'N/A':<12} {'N/A':<14} {'N/A':<10}")
+                except Exception as e:
+                    print(f"{char_name:<20} {'ERROR':<12} {'ERROR':<14} {'ERROR':<10}")
+    
+        # Identify key discriminating factors
+        print(f"\n🎯 KEY DISCRIMINATING FACTORS:")
+        if profitable and unprofitable:
+            # Find characteristics where profitable stocks significantly outperform
+            factors = []
+            for char_name in ['avg_adx', 'trend_consistency', 'volatility_regime', 'hma_slope_freq']:
+                try:
+                    prof_values = [s[char_name] for s in profitable if char_name in s and not pd.isna(s[char_name])]
+                    unprof_values = [s[char_name] for s in unprofitable if char_name in s and not pd.isna(s[char_name])]
+
+                    if prof_values and unprof_values:
+                        prof_avg = sum(prof_values) / len(prof_values)
+                        unprof_avg = sum(unprof_values) / len(unprof_values)
+                        diff_pct = abs(prof_avg - unprof_avg) / max(abs(prof_avg), abs(unprof_avg)) * 100
+
+                        if diff_pct > 20:  # 20% difference threshold
+                            direction = "Higher" if prof_avg > unprof_avg else "Lower"
+                            factors.append(f"{char_name} ({direction} in profitable stocks)")
+                except Exception as e:
+                    print(f"Error calculating factors for {char_name}: {e}")
+    
+            if factors:
+                print("Stocks suitable for Hull Suite typically have:")
+                for factor in factors:
+                    print(f"  • {factor}")
+            else:
+                print("⚠️ No clear discriminating factors found - need more data")
+    
+        return stock_characteristics
+    
+    
+def calculate_hull_characteristics(df):
+        """Calculate quantitative characteristics that determine Hull Suite suitability"""
+        from backtest import add_indicators
+        df = add_indicators(df)
+    
+        # Skip if insufficient data
+        if len(df) < 100 or 'hma55' not in df.columns or 'adx14' not in df.columns:
+            return {}
+    
+        # 1. Average ADX (trend strength) - Hull works better in trending markets
+        avg_adx = df['adx14'].mean()
+    
+        # 2. Trend Consistency - How often ADX indicates trending conditions
+        trend_consistency = (df['adx14'] > 25).mean()  # % of time in trending regime
+    
+        # 3. Volatility Regime - Hull performs better in certain volatility ranges
+        volatility_regime = df['bb_width'].mean()  # Average Bollinger Band width
+    
+        # 4. HMA Slope Frequency - How often HMA changes direction (Hull signal frequency)
+        hma_slopes = []
+        for i in range(2, len(df)):
+            slope = df['hma55'].iloc[i] - df['hma55'].iloc[i-2]
+            hma_slopes.append(slope)
+    
+        if hma_slopes:
+            # Frequency of meaningful slope changes
+            slope_changes = sum(1 for i in range(1, len(hma_slopes)) if (hma_slopes[i] * hma_slopes[i-1]) < 0)
+            hma_slope_freq = slope_changes / len(hma_slopes) if hma_slopes else 0
+        else:
+            hma_slope_freq = 0
+    
+        # 5. Volume-Trend Correlation - Trending stocks often have volume confirmation
+        volume_trend_corr = 0
+        if 'volume' in df.columns and len(df) > 30:
+            try:
+                # Calculate trend direction (price momentum)
+                price_momentum = df['close'].pct_change(5).shift(-5)  # 5-period forward return
+                volume_ma = df['volume'].rolling(10).mean()
+
+                # Correlation between volume and subsequent price movement
+                valid_idx = ~(price_momentum.isna() | volume_ma.isna())
+                if valid_idx.sum() > 10:
+                    corr_data = pd.concat([price_momentum[valid_idx], volume_ma[valid_idx]], axis=1).dropna()
+                    if len(corr_data) > 10:
+                        volume_trend_corr = corr_data.iloc[:, 0].corr(corr_data.iloc[:, 1])
+                        # Ensure it's not NaN
+                        volume_trend_corr = volume_trend_corr if not pd.isna(volume_trend_corr) else 0
+            except Exception as e:
+                print(f"Volume correlation calculation failed: {e}")
+                volume_trend_corr = 0
+    
+        return {
+            'avg_adx': avg_adx,
+            'trend_consistency': trend_consistency,
+            'volatility_regime': volatility_regime,
+            'hma_slope_freq': hma_slope_freq,
+            'volume_trend_corr': volume_trend_corr
+        }
+    
+    
 if __name__ == "__main__":
     main()
 

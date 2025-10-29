@@ -315,9 +315,9 @@ def strategy_signals(df: pd.DataFrame, name: str, min_confidence: float = 0.8) -
     return s
 
 
-def backtest_strategy(df_raw: pd.DataFrame, name: str, sl_atr: float = 1.0, tp_rr: float = 2.0) -> Tuple[List[BTTrade], pd.Series]:
+def backtest_strategy(df_raw: pd.DataFrame, name: str, sl_atr: float = 1.0, tp_rr: float = 2.0) -> Tuple[List[BTTrade], pd.Series, Dict]:
     df = add_indicators(df_raw)
-    sig = strategy_signals(df, name, min_confidence=0.7)  # Lower confidence for more trades
+    sig = strategy_signals(df, name, min_confidence=0.75)  # Match live scanner confidence
     entry_side: str | None = None
     entry_px: float = 0.0
     entry_idx: int = -1
@@ -329,6 +329,9 @@ def backtest_strategy(df_raw: pd.DataFrame, name: str, sl_atr: float = 1.0, tp_r
     # Trading costs and slippage - balanced for realistic profitability
     brokerage_per_trade = 0.00003  # 0.003% per trade (very competitive)
     slippage_bps = 0.5  # 0.5 bps slippage for limit orders (tight spreads)
+
+    # Track daily trade statistics
+    daily_stats = {}
 
     for i in range(1, len(df)):
         row = df.iloc[i]
@@ -359,7 +362,16 @@ def backtest_strategy(df_raw: pd.DataFrame, name: str, sl_atr: float = 1.0, tp_r
                     pnl = (exit_px - entry_px) - (entry_px + exit_px) * brokerage_per_trade  # Gross P&L minus fees
                     bars = i - entry_idx
                     exit_reason = "target" if hit_tp else ("stop" if hit_stop else "signal")
-                    trades.append(BTTrade(df.iloc[entry_idx]['ts'], row['ts'], 'LONG', entry_px, exit_px, pnl, bars, exit_reason))
+                    trade = BTTrade(df.iloc[entry_idx]['ts'], row['ts'], 'LONG', entry_px, exit_px, pnl, bars, exit_reason)
+                    trades.append(trade)
+
+                    # Track daily statistics
+                    trade_date = df.iloc[entry_idx]['ts'].date()
+                    if trade_date not in daily_stats:
+                        daily_stats[trade_date] = {'BUY': 0, 'SELL': 0, 'total': 0}
+                    daily_stats[trade_date]['BUY' if entry_side == 'LONG' else 'SELL'] += 1
+                    daily_stats[trade_date]['total'] += 1
+
                     capital += pnl
                     entry_side = None
             else:  # SHORT
@@ -381,7 +393,17 @@ def backtest_strategy(df_raw: pd.DataFrame, name: str, sl_atr: float = 1.0, tp_r
                     pnl = (entry_px - exit_px) - (entry_px + exit_px) * brokerage_per_trade
                     bars = i - entry_idx
                     exit_reason = "target" if hit_tp else ("stop" if hit_stop else "signal")
-                    trades.append(BTTrade(df.iloc[entry_idx]['ts'], row['ts'], 'SHORT', entry_px, exit_px, pnl, bars, exit_reason))
+                    trade = BTTrade(df.iloc[entry_idx]['ts'], row['ts'], 'SHORT', entry_px, exit_px, pnl, bars, exit_reason)
+                    trades.append(trade)
+
+                    # Track daily statistics - count signal types (BUY/SELL signals that led to entry)
+                    signal_type = 'BUY' if side == 'BUY' else 'SELL'  # side is from the signal that triggered entry
+                    trade_date = df.iloc[entry_idx]['ts'].date()
+                    if trade_date not in daily_stats:
+                        daily_stats[trade_date] = {'BUY': 0, 'SELL': 0, 'total': 0}
+                    daily_stats[trade_date][signal_type] += 1
+                    daily_stats[trade_date]['total'] += 1
+
                     capital += pnl
                     entry_side = None
 
@@ -419,7 +441,8 @@ def backtest_strategy(df_raw: pd.DataFrame, name: str, sl_atr: float = 1.0, tp_r
 
         equity.append(capital)
     equity_series = pd.Series(equity, index=df['ts'])
-    return trades, equity_series
+
+    return trades, equity_series, daily_stats
 
 
 def sharpe(equity: pd.Series) -> float:
@@ -477,7 +500,7 @@ def run_backtests(strategies: List[str], timeframes: List[Timeframe], symbols_li
                 print(f"    📊 {tf}: {len(df)} candles")
                 # Add progress indicator to avoid large output
                 print(f"    🔄 Processing {len(df)} candles...")
-                trades, eq = backtest_strategy(df, strat)
+                trades, eq, daily_stats = backtest_strategy(df, strat)
                 strat_trades += len(trades)
                 print(f"    ✅ Completed {len(trades)} trades")
 

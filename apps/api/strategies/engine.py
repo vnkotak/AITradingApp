@@ -205,7 +205,7 @@ def hull_suite(df: pd.DataFrame, current_index: int = -1) -> Optional[Signal]:
         risk = entry - stop
         target = float(entry + 3 * risk)
 
-        confidence = 0.8  # High confidence for trend-following
+        confidence = 0.4  # Lower base confidence to let scoring system work
 
         return Signal("BUY", entry, stop, target, confidence, "hull_suite",
                      {"hma_current": float(last["hma55"]), "hma_prev": float(prev_2["hma55"]),
@@ -223,7 +223,7 @@ def hull_suite(df: pd.DataFrame, current_index: int = -1) -> Optional[Signal]:
         risk = stop - entry
         target = float(entry - 3 * risk)
 
-        confidence = 0.8
+        confidence = 0.4
 
         return Signal("SELL", entry, stop, target, confidence, "hull_suite",
                      {"hma_current": float(last["hma55"]), "hma_prev": float(prev_2["hma55"]),

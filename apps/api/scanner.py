@@ -13,6 +13,74 @@ from apps.api.signal_generator import ScoredSignal, score_signal, ensemble
 from apps.api.model_weights import get_latest_strategy_weights
 
 
+def check_hull_suitability(df: pd.DataFrame, ticker: str) -> bool:
+    """Check if stock meets quantitative criteria for Hull Suite suitability"""
+    from apps.api.strategies.indicators import add_core_indicators
+
+    # Need sufficient historical data
+    if len(df) < 200:  # Need at least 200 candles for reliable characteristics
+        return False
+
+    # Calculate Hull-specific characteristics
+    try:
+        # Add indicators needed for analysis
+        df_analyzed = add_core_indicators(df.copy())
+
+        if len(df_analyzed) < 100 or 'hma55' not in df_analyzed.columns:
+            return False
+
+        # Key characteristics that discriminate profitable vs unprofitable stocks
+        avg_adx = df_analyzed['adx14'].mean()
+        trend_consistency = (df_analyzed['adx14'] > 25).mean()  # % time in trending regime
+        volatility_regime = df_analyzed['bb_width'].mean()
+
+        # HMA slope analysis
+        hma_slopes = []
+        for i in range(2, len(df_analyzed)):
+            slope = df_analyzed['hma55'].iloc[i] - df_analyzed['hma55'].iloc[i-2]
+            hma_slopes.append(slope)
+
+        hma_slope_freq = 0
+        if hma_slopes:
+            slope_changes = sum(1 for i in range(1, len(hma_slopes)) if (hma_slopes[i] * hma_slopes[i-1]) < 0)
+            hma_slope_freq = slope_changes / len(hma_slopes)
+
+        # Hull suitability criteria based on profitable stock patterns
+        criteria_met = 0
+        total_criteria = 4
+
+        # 1. Trending market (ADX > 22) - Hull works in trending conditions
+        if avg_adx > 22:
+            criteria_met += 1
+
+        # 2. Moderate trend consistency (25-60% of time trending)
+        if 0.25 <= trend_consistency <= 0.60:
+            criteria_met += 1
+
+        # 3. Moderate volatility (not too choppy, not too trending)
+        if 0.02 <= volatility_regime <= 0.08:
+            criteria_met += 1
+
+        # 4. Reasonable HMA slope frequency (not too noisy, not too static)
+        if 0.15 <= hma_slope_freq <= 0.45:
+            criteria_met += 1
+
+        # Must meet at least 3 out of 4 criteria
+        suitability_score = criteria_met / total_criteria
+
+        # Debug output for first few stocks
+        if suitability_score >= 0.75:  # Meets 3+ criteria
+            print(f"  ✅ {ticker} suitable for Hull (score: {suitability_score:.2f}, ADX: {avg_adx:.1f}, Trend%: {trend_consistency:.1%}, Vol: {volatility_regime:.3f}, HMA%: {hma_slope_freq:.1%})")
+            return True
+        else:
+            print(f"  ❌ {ticker} not suitable for Hull (score: {suitability_score:.2f}, ADX: {avg_adx:.1f}, Trend%: {trend_consistency:.1%}, Vol: {volatility_regime:.3f}, HMA%: {hma_slope_freq:.1%})")
+            return False
+
+    except Exception as e:
+        print(f"  ⚠️ Error calculating Hull suitability for {ticker}: {e}")
+        return False
+
+
 def is_overbought_oversold(df: pd.DataFrame) -> bool:
     """
     Check if current market conditions are overbought or oversold.
@@ -293,10 +361,11 @@ def scan_once(mode: str, force: bool = False, max_symbols: int = 200) -> dict:
             continue
         df = add_core_indicators(df)
 
-        # Skip if overbought/oversold conditions
-        if is_overbought_oversold(df):
-            print(f"  Skipping {ticker} - extreme market conditions detected")
-            continue
+
+        # Dynamic Hull Suite suitability check based on quantitative characteristics
+        is_hull_suitable = check_hull_suitability(df, ticker)
+        if not is_hull_suitable:
+            continue  # Skip stocks that don't meet Hull suitability criteria
 
         raw_signals = run_strategies(df)
         if not raw_signals and force:

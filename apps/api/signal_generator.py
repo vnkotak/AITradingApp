@@ -84,33 +84,72 @@ def _sentiment_bias(ticker: str, exchange: str, lookback: int = 3) -> float:
 
 def score_signal(df: pd.DataFrame, action: str, base_conf: float, context: Dict | None = None) -> tuple[float, Dict]:
     feats = _feature_contributions(df)
-    # Weights optimized for Flawless Victory mean reversion strategy
-    # Focus on mean reversion signals, RSI positioning, and BB extremes
-    w = {
-        "rsi_bias": 0.9 if action == "BUY" else -0.8,  # Strong RSI preference for mean reversion
-        "macd_momentum": 0.4 if action == "BUY" else -0.5,  # Moderate momentum (not primary)
-        "trend_strength": -0.6,  # Penalize strong trends (prefer ranging for mean reversion)
-        "vwap_premium_atr": 0.2,  # Neutral VWAP for mean reversion
-        "bb_regime": 0.7,  # High volatility preferred (BB width indicates mean reversion opportunity)
-        "volume_z": 0.3,  # Moderate volume importance
-    }
-    logits = base_conf * 1.5
+    last = df.iloc[-1]
     contribs: Dict[str, float] = {}
+
+    # Detect regime - Hull Suite is trend-following, so optimize for trends
+    adx = feats.get("trend_strength", 0.0)
+    macd = feats.get("macd_momentum", 0.0)
+    trend_regime = "trend" if adx > 0.6 and abs(macd) > 0.2 else "range"
+
+    # Dynamic weights based on market regime - favor trend-following for Hull
+    if trend_regime == "range":
+        w = {
+            "rsi_bias": 0.6 if action == "BUY" else -0.5,  # Moderate RSI preference
+            "macd_momentum": 0.5 if action == "BUY" else -0.6,  # MACD confirmation
+            "trend_strength": -0.3,  # Slightly penalize weak trends in ranging markets
+            "vwap_premium_atr": 0.25,
+            "bb_regime": 0.4,  # Moderate volatility preference
+            "volume_z": 0.3,
+        }
+    else:  # trend regime - optimize for Hull Suite trend-following
+        w = {
+            "rsi_bias": 0.3 if action == "BUY" else -0.3,  # Reduced RSI importance in trends
+            "macd_momentum": 0.9 if action == "BUY" else -0.9,  # Strong MACD alignment with trend
+            "trend_strength": 0.8,  # Reward strong trends (Hull's strength)
+            "vwap_premium_atr": 0.4,  # Trend continuation signal
+            "bb_regime": 0.2,  # Less emphasis on volatility in strong trends
+            "volume_z": 0.6,  # Volume confirmation for trend moves
+        }
+
+    logits = base_conf * 1.2  # Reduced base multiplier for more conservative scoring
+
+    # Compute contributions
     for k, weight in w.items():
         c = feats.get(k, 0.0) * weight
         contribs[k] = c
         logits += c
-    # Sentiment bias
-    ticker = context.get('ticker') if context else None
-    exchange = context.get('exchange') if context else None
+
+    # RSI extreme confirmation (but not primary signal)
+    rsi = float(last.get("rsi14", 50))
+    if action == "BUY" and rsi < 35:  # Only boost on extreme oversold in trends
+        logits += 0.2
+        contribs["rsi_extreme"] = 0.2
+    elif action == "SELL" and rsi > 65:  # Only boost on extreme overbought in trends
+        logits += 0.2
+        contribs["rsi_extreme"] = 0.2
+
+    # HMA trend alignment (Hull-specific confirmation) - DISABLED for now
+    # The base Hull signal already includes HMA slope logic, so don't double-count
+    pass
+
+    # Sentiment bias (reduced importance for trend strategies)
+    ticker = context.get("ticker") if context else None
+    exchange = context.get("exchange") if context else None
     if ticker and exchange:
         s_bias = _sentiment_bias(ticker, exchange)
-        logits += s_bias * (0.3 if action == 'BUY' else -0.3)
-        contribs['sentiment'] = s_bias * (0.3 if action == 'BUY' else -0.3)
+        logits += s_bias * (0.15 if action == "BUY" else -0.15)
+        contribs["sentiment"] = s_bias * (0.15 if action == "BUY" else -0.15)
+
+    # Compute final confidence
     conf = _sigmoid(logits)
-    # Clamp and round
     conf = float(max(0.0, min(1.0, conf)))
-    rationale = {"base": base_conf, "features": feats, "contribs": contribs}
+    rationale = {
+        "base": base_conf,
+        "regime": trend_regime,
+        "features": feats,
+        "contribs": contribs,
+    }
     return conf, rationale
 
 
